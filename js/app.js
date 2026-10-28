@@ -619,10 +619,12 @@ $("#crafts").addEventListener("click", e => {
   if (rr) { if (!isMe()) return; const s = S.suivi.find(x => x.id === +rr.dataset.rreset); delete s.r; Store.saveSuivi(); render(); toast("Recette du jeu restaurée"); return; }
   const tr = t.closest("tr.item"); if (tr) { const id = +tr.dataset.id; open.has(id) ? open.delete(id) : open.add(id); renderCrafts(); applyRO(); }
 });
+function jErr(m) { let el = $("#jErr"); if (!el) { el = document.createElement("p"); el.id = "jErr"; el.className = "err"; el.setAttribute("role", "alert"); $("#jform").after(el); } el.textContent = m; el.hidden = !m; }
 $("#jform").addEventListener("submit", e => {
-  e.preventDefault(); if (!isMe()) return; const id = +$("#jItem").value; if (!id) { toast("Ajoute d'abord un item suivi"); return; }
+  e.preventDefault(); if (!isMe()) return; const id = +$("#jItem").value; if (!id) { jErr("Ajoute d'abord un item dans Crafts suivis : le journal ne liste que tes items suivis."); return; }
   const it = ITEMS.get(id); const qte = Math.max(1, +$("#jQty").value || 1); const cout = +$("#jCost").value || 0;
-  if (!cout) { toast("Indique le coût total de la série"); $("#jCost").focus(); return; }
+  if (!cout) { jErr("Indique le coût total de la série (les prix des ressources de cet item ne sont pas tous renseignés, donc il n'a pas pu être calculé)."); $("#jCost").classList.add("miss"); $("#jCost").focus(); return; }
+  jErr(""); $("#jCost").classList.remove("miss");
   Store.addJr({ item: id, nom: it.n, qte, cout, achat: $("#jBuy").value || today(), brisage: "", runes: 0, vente: "", encaisse: 0 });
   delete $("#jCost").dataset.touched; $("#jQty").value = 1; prefillCost(); toast("Série ajoutée au journal");
 });
