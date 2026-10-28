@@ -185,19 +185,32 @@ function setView(uid) {
   VIEW = uid; S = member(uid); open.clear(); demoOn = true;
   renderHeader(); render();
 }
+function weekBen(m) {
+  const from = GR.semaine.start(new Date()); let b = 0;
+  for (const e of m.journal) { const R = realize(e); const d = R && pD(R.date); if (d && d >= from) b += R.ventes - (+e.cout || 0); }
+  return b;
+}
 function renderHeader() {
-  const sel = $("#viewSel");
-  sel.innerHTML = membersSorted().map(([uid, m]) => `<option value="${uid}">${esc(m.p.pseudo)}${uid === ME ? " (moi)" : ""}${m.p.serveur ? " · " + esc(m.p.serveur) : ""}</option>`).join("");
-  sel.value = VIEW;
+  $("#members").innerHTML = membersSorted().map(([uid, m]) => { const b = weekBen(m);
+    return `<button class="mem" type="button" data-view="${uid}" aria-current="${uid === VIEW}"><span class="avatar sm" style="background:${colorOf(uid)}">${esc(initials(m.p.pseudo))}</span><span class="nm">${esc(m.p.pseudo)}${uid === ME ? " (moi)" : ""}</span><span class="v ${b > 0 ? "up" : b < 0 ? "dn" : ""}">${b ? (b > 0 ? "+" : "") + kfmt(b) : "–"}</span></button>`; }).join("");
+  $("#meSrv").textContent = MYPROFILE?.serveur || "";
   $("#roBanner").hidden = isMe();
   $("#roName").textContent = S.p?.pseudo || "";
   document.body.classList.toggle("ro", ro());
   $("#cGrp").textContent = membersSorted().length;
 }
-$("#viewSel").addEventListener("change", e => setView(e.target.value));
+$("#members").addEventListener("click", e => { const b = e.target.closest("[data-view]"); if (b) setView(b.dataset.view); });
 $("#btnBackMe").addEventListener("click", () => setView(ME));
+const TITLES = {
+  dash: ["Tableau de bord", "Bénéfices, ventes et rendement réel"],
+  grp: ["Le groupe", "Bilans et classement des membres"],
+  crafts: ["Crafts suivis", "Coût de craft, valeur de brisage et plan d'achat"],
+  res: ["Ressources", "Prix unitaires utilisés pour calculer les coûts"],
+  jr: ["Journal", "Achats, brisages et ventes, série par série"]
+};
 function setTab(t) {
   tab = t; lsSet("tab", t);
+  $("#pageTitle").textContent = TITLES[t][0]; $("#pageSub").textContent = TITLES[t][1];
   document.querySelectorAll("nav [data-tab]").forEach(x => x.setAttribute("aria-selected", x.dataset.tab === t));
   ["dash", "grp", "crafts", "res", "jr"].forEach(x => $("#v-" + x).hidden = x !== t);
   render();
@@ -207,6 +220,7 @@ document.querySelector("nav").addEventListener("click", e => { const b = e.targe
 // ---------------------------------------------------------------- rendu
 function render() {
   if (!D || !VIEW) return;
+  renderHeader();
   $("#cCrafts").textContent = S.suivi.length;
   $("#cRes").textContent = neededRes().length;
   $("#cJr").textContent = S.journal.length;
@@ -301,7 +315,7 @@ function renderJr() {
   keepFocus(() => {
     $("#jr").innerHTML = J.length ? J.map(e => {
       const R = realize(e), ben = R ? R.ventes - (+e.cout || 0) : null, roi = R && e.cout > 0 ? ben / e.cout : null;
-      const st = +e.encaisse > 0 ? ["s-done", "Vendu"] : +e.runes > 0 ? ["s-run", "Brisé"] : ["s-run", "En stock"];
+      const st = +e.encaisse > 0 ? ["s-done", "Vendu"] : +e.runes > 0 ? ["s-brk", "Brisé"] : ["s-run", "En stock"];
       const inp = (f, type, w, extra = "") => `<td style="width:${w}px"><input ${type === "date" ? "" : 'class="num"'} id="j${f}-${e._id}" data-j="${e._id}" data-f="${f}" type="${type}" ${type === "number" ? 'min="0"' : ""} value="${esc(e[f] || "")}" ${extra}></td>`;
       return `<tr><td class="l"><b>${esc(e.nom)}</b></td>
         ${inp("qte", "number", 64, 'aria-label="Quantité"')}${inp("achat", "date", 138, 'aria-label="Date d\'achat"')}${inp("cout", "number", 104, 'aria-label="Coût total"')}
@@ -395,10 +409,10 @@ function renderDash() {
   const totalBen = J.reduce((a, e) => { const R = realize(e); return R ? a + R.ventes - (+e.cout || 0) : a; }, 0);
   $("#dashRange").textContent = `${G.full(keys[0])} → ${G.full(keys[keys.length - 1])}`;
   $("#hBen").textContent = "Bénéfice par " + G.unit;
-  const delta = (a, b) => { if (!b) return a ? `<span>Rien ${G.prev}</span>` : "–"; const r = (a - b) / Math.abs(b); return `<span class="${r >= 0 ? "d-up" : "d-down"}">${r >= 0 ? "▲ +" : "▼ "}${Math.round(r * 100)} %</span> vs ${G.prev}`; };
+  const delta = (a, b) => { if (!b) return a ? `<span>Rien ${G.prev}</span>` : "–"; const r = (a - b) / Math.abs(b); return `<span class="delta ${r >= 0 ? "d-up" : "d-down"}">${r >= 0 ? "▲ +" : "▼ "}${Math.round(r * 100)} %</span>vs ${G.prev}`; };
   const marge = C.cout ? C.ben / C.cout : null, margeP = prev.cout ? prev.ben / prev.cout : null;
   $("#kpis").innerHTML = `
-    <div class="kpi hero"><span class="k-l">Bénéfice · ${G.cur.toLowerCase()}</span><span class="k-v ${C.ben < 0 ? "neg" : ""}">${fmt(C.ben)}</span><span class="k-d">${delta(C.ben, prev.ben)}</span></div>
+    <div class="kpi hero"><span class="k-l">Bénéfice · ${G.cur.toLowerCase()}</span><span class="k-v ${C.ben < 0 ? "neg" : ""}">${C.ben > 0 ? "+" : ""}${fmt(C.ben)}<small>kamas</small></span><span class="k-d">${delta(C.ben, prev.ben)}</span></div>
     <div class="kpi"><span class="k-l">Ventes encaissées</span><span class="k-v">${fmt(C.ventes)}</span><span class="k-d">${delta(C.ventes, prev.ventes)}</span></div>
     <div class="kpi"><span class="k-l">Marge sur coût</span><span class="k-v">${marge != null ? pillTxt(marge) : "–"}</span><span class="k-d">${margeP != null ? `${pillTxt(margeP)} ${G.prev}` : "&nbsp;"}</span></div>
     <div class="kpi"><span class="k-l">Capital en stock</span><span class="k-v">${fmt(stock)}</span><span class="k-d">${pend.length} série(s) à briser ou vendre</span></div>
@@ -409,9 +423,9 @@ function renderDash() {
 function drawDashCharts(B, G, J) {
   killChart("ben"); killChart("cum");
   if (!window.Chart) return;
-  const { tip, grid, anim } = chartBase(); const acc = css("--accent"), bad = css("--bad"), bg = css("--surface");
+  const { tip, grid, anim } = chartBase(); const acc = css("--accent"), good = css("--good"), bad = css("--bad"), bg = css("--surface");
   charts.ben = new Chart($("#chBen"), { type: "bar",
-    data: { labels: B.map(b => G.lab(b.d)), datasets: [{ data: B.map(b => Math.round(b.ben)), backgroundColor: B.map(b => b.ben < 0 ? bad : acc), hoverBackgroundColor: B.map(b => b.ben < 0 ? bad : acc), borderRadius: 4, borderSkipped: "start", maxBarThickness: 30, categoryPercentage: .8, barPercentage: .85 }] },
+    data: { labels: B.map(b => G.lab(b.d)), datasets: [{ data: B.map(b => Math.round(b.ben)), backgroundColor: B.map(b => b.ben < 0 ? bad : good), hoverBackgroundColor: B.map(b => b.ben < 0 ? bad : good), borderRadius: 5, borderSkipped: "start", maxBarThickness: 30, categoryPercentage: .8, barPercentage: .85 }] },
     options: { responsive: true, maintainAspectRatio: false, animation: anim,
       plugins: { legend: { display: false }, tooltip: { ...tip, callbacks: { title: it => G.full(B[it[0].dataIndex].d), label: it => { const b = B[it.dataIndex]; return [`Bénéfice : ${fmt(b.ben)}`, `Ventes : ${fmt(b.ventes)}`, `Coût : ${fmt(b.cout)}`, `${b.n} série(s)`]; } } } },
       scales: { x: { grid: { display: false }, ticks: { maxRotation: 0, autoSkipPadding: 10 } }, y: { grid, border: { display: false }, ticks: { padding: 8, callback: v => kfmt(v) } } } } });
@@ -441,7 +455,7 @@ function renderHeat(J) {
   const start = GR.semaine.add(GR.semaine.start(end), -25);
   const vals = [...day.values()].filter(v => v > 0).sort((a, b) => a - b);
   const q = p => vals.length ? vals[Math.min(vals.length - 1, Math.floor(p * vals.length))] : 1;
-  const th = [q(.25), q(.5), q(.75)]; const acc = css("--accent"), bad = css("--bad");
+  const th = [q(.25), q(.5), q(.75)]; const acc = css("--good"), bad = css("--bad");
   const shade = v => v < 0 ? hexA(bad, .75) : v > 0 ? hexA(acc, v <= th[0] ? .25 : v <= th[1] ? .5 : v <= th[2] ? .75 : 1) : "";
   let h = ""; const stop = GR.semaine.add(GR.semaine.start(end), 1);
   for (let d = new Date(start); d < stop; d = GR.jour.add(d, 1)) {
@@ -483,7 +497,7 @@ function renderGroup() {
   const now = new Date();
   const from = ggran === "tout" ? null : GR[ggran].start(now);
   const lab = { semaine: "cette semaine", mois: "ce mois-ci", annee: "cette année", tout: "depuis le début" }[ggran];
-  $("#hGrpBar").textContent = "Bénéfice " + lab;
+  $("#hGrpBar").textContent = "Classement · " + lab;
   const M = membersSorted().map(([uid, m]) => {
     let ven = 0, cout = 0, n = 0, last = "";
     for (const e of m.journal) {
@@ -499,9 +513,9 @@ function renderGroup() {
   // barres
   const mx = Math.max(1, ...M.map(x => Math.abs(x.ben))); const hasNeg = M.some(x => x.ben < 0);
   const sorted = [...M].sort((a, b) => b.ben - a.ben);
-  $("#grpBars").innerHTML = sorted.length ? sorted.map(x => {
+  $("#grpBars").innerHTML = sorted.length ? sorted.map((x, rk) => {
     const w = Math.abs(x.ben) / mx * (hasNeg ? 50 : 100), left = hasNeg ? (x.ben >= 0 ? 50 : 50 - w) : 0;
-    return `<div class="gbar" title="${esc(x.m.p.pseudo)} : ${fmt(x.ben)} de bénéfice ${lab}"><span class="nm">${esc(x.m.p.pseudo)}</span>
+    return `<div class="gbar" title="${esc(x.m.p.pseudo)} : ${fmt(x.ben)} de bénéfice ${lab}"><span class="rank">${rk + 1}</span><span class="nm">${esc(x.m.p.pseudo)}</span>
       <span class="track">${hasNeg ? '<span class="axis" style="left:50%"></span>' : ""}<span class="fill" style="left:${left}%;width:${Math.max(w, x.ben ? 1 : 0)}%;background:${colorOf(x.uid)}"></span></span>
       <span class="v ${x.ben < 0 ? "neg" : ""}">${fmt(x.ben)}</span></div>`; }).join("") : '<p class="empty">Aucun membre pour l\'instant.</p>';
   // tableau
@@ -625,7 +639,11 @@ $("#btnExport").addEventListener("click", () => {
 $("#fileImport").addEventListener("change", async e => {
   const f = e.target.files[0]; if (!f) return; e.target.value = "";
   try {
-    const d = JSON.parse(await f.text()); if (d.format !== "atelier-brisage") throw new Error("format");
+    await importData(JSON.parse(await f.text()));
+  } catch (x) { console.error(x); toast("Fichier non reconnu : importe un fichier exporté par l'Atelier de brisage"); }
+});
+async function importData(d) {
+    if (d.format !== "atelier-brisage") throw new Error("format");
     const me = member(ME); let ni = 0, nj = 0;
     for (const s of d.suivi || []) { if (!me.suivi.some(x => x.id === s.id)) { me.suivi.push({ ...s }); ni++; } }
     if (d.prix?.p) { Object.assign(me.prix, d.prix.p); Object.assign(me.maj, d.prix.m || {}); }
@@ -636,8 +654,7 @@ $("#fileImport").addEventListener("change", async e => {
     if (nj) await batch.commit();
     VIEW = wasView; S = member(VIEW); render();
     toast(`Import terminé : ${ni} item(s), ${nj} série(s)`);
-  } catch (x) { console.error(x); toast("Fichier non reconnu : importe un fichier exporté par l'Atelier de brisage"); }
-});
+}
 
 // ---------------------------------------------------------------- divers
 document.addEventListener("pointerover", e => {
@@ -645,7 +662,21 @@ document.addEventListener("pointerover", e => {
   t.textContent = c.dataset.tip; const r = c.getBoundingClientRect();
   t.style.left = Math.max(8, Math.min(innerWidth - t.offsetWidth - 8, r.left + r.width / 2 - t.offsetWidth / 2)) + "px"; t.style.top = (r.top - 34) + "px"; t.classList.add("show");
 });
-const reTheme = () => { if (D && VIEW) render(); };
+const reTheme = () => { if (D && VIEW) { renderHeader(); render(); } };
+const THEMES = ["system", "dark", "light"], THEME_LAB = { system: "Auto", dark: "Sombre", light: "Clair" };
+let theme = lsGet("theme") || "system";
+function applyTheme() {
+  if (theme === "system") delete document.documentElement.dataset.theme; else document.documentElement.dataset.theme = theme;
+  $("#themeLab").textContent = THEME_LAB[theme]; reTheme();
+}
+$("#btnTheme").addEventListener("click", () => { theme = THEMES[(THEMES.indexOf(theme) + 1) % 3]; lsSet("theme", theme); applyTheme(); toast("Thème : " + THEME_LAB[theme].toLowerCase()); });
+$("#themeLab").textContent = THEME_LAB[theme];
+$("#dataPanel").addEventListener("click", e => { if (e.target.id === "dataPanel") $("#dataPanel").hidden = true; });
+document.addEventListener("keydown", e => { if (e.key === "Escape") $("#dataPanel").hidden = true; });
+$("#btnStarter").addEventListener("click", async () => {
+  try { const d = await (await fetch("data/depart-tanguy.json")).json(); await importData(d); $("#dataPanel").hidden = true; }
+  catch (x) { console.error(x); toast("Impossible de charger les items de départ"); }
+});
 matchMedia("(prefers-color-scheme: dark)").addEventListener("change", reTheme);
 
 boot();
