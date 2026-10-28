@@ -592,8 +592,8 @@ function renderHome() {
   // 1. mes kamas
   const cap = Math.max(0, +lsGet("budget") || 0);
   if (document.activeElement !== $("#homeCap")) $("#homeCap").value = cap || "";
-  const engaged = c.open.reduce((a, e) => a + (coutT(e)), 0), free = Math.max(0, cap - engaged);
-  $("#homeCapKv").innerHTML = `<li><span>Déjà engagés (en cours)</span><b class="mono">${fmt(engaged)}</b></li><li><span>Encore disponibles</span><b class="mono">${fmt(free)}</b></li>`;
+  const engaged = c.open.reduce((a, e) => a + (coutT(e)), 0), free = cap; // kamas que j'ai : les séries en cours sont déjà payées
+  $("#homeCapKv").innerHTML = `<li><span>Déjà dépensés dans des ventes en cours</span><b class="mono">${fmt(engaged)}</b></li>`;
   // 2. mon panier
   renderCart(free);
   // idées : le plan optimal pour les kamas disponibles (moins ce qui est déjà dans le panier)
@@ -709,15 +709,15 @@ function calcState() {
   const s = S.suivi.find(x => x.id === calcId) || { id: calcId };
   let cost = 0, miss = 0; const lines = recipeOf(s).map(([rid, q]) => { const pi = priceInfo(rid); if (pi.v == null) miss++; else cost += pi.v * q; return { rid, q, pi }; });
   const pv = +s.pv || 0, net = pv * (1 - taxe()), ben = miss || !pv ? null : net - cost;
-  const engaged = S.journal.filter(e => !isDone(e)).reduce((a, e) => a + coutT(e), 0), bud = +lsGet("budget") || 0, free = Math.max(0, bud - engaged);
-  return { it, s, lines, cost, miss, pv, net, ben, bud, engaged, free, canDo: !miss && cost > 0 ? Math.floor(free / cost) : null };
+  const bud = +lsGet("budget") || 0, free = bud; // les kamas que j'ai en poche : les ventes en cours sont déjà payées
+  return { it, s, lines, cost, miss, pv, net, ben, bud, free, canDo: !miss && cost > 0 ? Math.floor(free / cost) : null };
 }
 function renderCalc() {
   const me = isMe(), x = calcState(), bud = +lsGet("budget") || 0;
   if (document.activeElement !== $("#cBud")) $("#cBud").value = bud ? lotFmt(bud) : "";
   $("#cItem").innerHTML = x ? `<div class="citem"><b>${esc(x.it.n)}</b><small>Niv. ${x.it.l} · ${esc(D.types[x.it.t] || "")}${x.it.j ? " · " + esc(x.it.j) : ""}</small></div>` : `<p class="note" style="margin:0">Cherche l'item dont tu regardes le prix en HDV.</p>`;
   ["cIngP", "cSellP", "cResP"].forEach(k => $("#" + k).hidden = !x);
-  if (!x) { const eng = S.journal.filter(e => !isDone(e)).reduce((a, e) => a + coutT(e), 0); $("#cBudNote").innerHTML = bud ? (eng ? `Dont ${fmt(eng)} déjà engagés dans des ventes en cours : <b>${fmt(Math.max(0, bud - eng))}</b> disponibles.` : `<b>${fmt(bud)}</b> disponibles.`) : ""; return; }
+  if (!x) { $("#cBudNote").textContent = ""; return; }
   keepFocus(() => {
     $("#cIng").innerHTML = x.lines.map(l => { const lot = calcLot[l.rid] || 1, own = +S.prix[l.rid] > 0; return `<tr>
       <td class="l"><b>${esc(resName(l.rid))}</b>${l.pi.src === "groupe" ? ' <span class="grp-tag" title="Prix proposé par ton groupe : tape le tien pour le remplacer">groupe</span>' : ""}</td>
@@ -731,7 +731,7 @@ function renderCalc() {
 }
 function calcTotals() {
   const x = calcState(); if (!x) return;
-  $("#cBudNote").innerHTML = x.bud ? (x.engaged ? `Dont ${fmt(x.engaged)} déjà engagés dans des ventes en cours : <b>${fmt(x.free)}</b> disponibles.` : `<b>${fmt(x.free)}</b> disponibles.`) : "";
+  $("#cBudNote").textContent = "";
   $("#cCost").innerHTML = x.miss ? `<span class="miss-t">il manque ${x.miss} prix</span>` : fmt(x.cost);
   x.lines.forEach(l => { const c = document.getElementById("cl-" + l.rid); if (c) c.textContent = l.pi.v != null ? fmt(l.pi.v * l.q) : "–"; });
   $("#cPvNote").textContent = x.pv ? `Après la taxe HDV de ${Math.round(taxe() * 1000) / 10} % : ${fmt(x.net)} pour toi.` : "";
@@ -744,7 +744,7 @@ function calcTotals() {
   const q = Math.max(1, Math.round(+$("#cQ").value || 1));
   $("#cBen").textContent = x.ben != null ? `${x.ben * q > 0 ? "+" : ""}${fmt(x.ben * q)}` : "–"; $("#cBen").style.color = x.ben == null ? "" : x.ben < 0 ? "var(--bad)" : "var(--good)";
   const need = x.miss ? null : x.cost * q;
-  $("#cGoNote").innerHTML = x.miss ? "Complète d'abord les prix des ressources (étape 3)." : !x.pv ? "Indique le prix de vente (étape 4)." : `Ça t'engage ${fmt(need)} kamas${x.bud && need > x.free ? ` · <span class="neg">plus que tes ${fmt(x.free)} disponibles</span>` : ""}. La série ira dans « Mes séries », où tu noteras la mise en vente puis les ventes.`;
+  $("#cGoNote").innerHTML = x.miss ? "Complète d'abord les prix des ressources (étape 3)." : !x.pv ? "Indique le prix de vente (étape 4)." : `Ça t'engage ${fmt(need)} kamas${x.bud && need > x.free ? ` · <span class="neg">plus que tes ${fmt(x.free)} kamas</span>` : ""}. La série ira dans « Mes séries », où tu noteras la mise en vente puis les ventes.`;
   $("#cGo").disabled = !!x.miss || !x.pv;
 }
 function calcPick(id) { calcId = id; lsSet("calcItem", String(id)); $("#cSearch").value = ""; $("#cResults").hidden = true; $("#cQ").value = 1; renderCalc(); applyRO(); setTimeout(() => (document.querySelector("#cIng input.miss") || $("#cPv")).focus(), 0); }
