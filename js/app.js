@@ -339,6 +339,29 @@ function keepFocus(fn) {
   if (id) { const el = document.getElementById(id); if (el && el !== a) { el.focus(); try { if (ss != null && el.type !== "number") el.setSelectionRange(ss, ss); } catch (e) { } } }
 }
 
+// ----- tri par colonne : clic sur un en-tête (un 2e clic inverse) ; les valeurs vides restent en bas
+const SORTS = (() => { try { return JSON.parse(lsGet("sorts") || "{}"); } catch (e) { return {}; } })();
+const SORT_DEF = { pet: ["per", 1], opp: ["benef", -1], res: ["auto", 1], runes: ["auto", 1] }; // auto : prix manquants d'abord, puis par nom
+function sortCmp(t, get) {
+  const [k, d] = SORTS[t] || SORT_DEF[t]; const g = get[k] || (() => null);
+  return (a, b) => {
+    const x = g(a), y = g(b), nx = x == null || x === "" || Number.isNaN(x), ny = y == null || y === "" || Number.isNaN(y);
+    if (nx || ny) return nx === ny ? 0 : nx ? 1 : -1;
+    return (typeof x === "string" ? x.localeCompare(y, "fr") : x - y) * d;
+  };
+}
+function markSort(t) {
+  const [k, d] = SORTS[t] || SORT_DEF[t];
+  document.querySelectorAll(`th[data-st="${t}"]`).forEach(th => { const on = th.dataset.sk === k; th.classList.toggle("on", on); th.setAttribute("aria-sort", on ? (d > 0 ? "ascending" : "descending") : "none"); th.dataset.dir = on ? (d > 0 ? "▲" : "▼") : ""; });
+}
+document.addEventListener("click", e => {
+  const th = e.target.closest("th[data-st]"); if (!th) return;
+  const t = th.dataset.st, k = th.dataset.sk, cur = SORTS[t] || SORT_DEF[t];
+  const textCol = ["name", "strat", "used"].includes(k);
+  SORTS[t] = [k, cur[0] === k ? -cur[1] : (textCol ? 1 : (k === "per" || k === "cost" || k === "in" || k === "price" || k === "qty" ? 1 : -1))];
+  lsSet("sorts", JSON.stringify(SORTS)); Object.keys(frozen).forEach(x => delete frozen[x]); render();
+});
+
 // ----- ordre des lignes figé pendant la saisie (sinon Tab sauterait de ligne en ligne au gré du tri)
 const frozen = {};
 function stableOrder(key, rows, idOf, cmp) {
@@ -389,7 +412,6 @@ function realOf(itemId, M = S) {
   const inv = L.reduce((a, e) => a + (+e.cout || 0), 0), rn = L.reduce((a, e) => a + realize(e).ventes, 0);
   return { n: L.length, roi: inv ? (rn - inv) / inv : null, ben: rn - inv };
 }
-let oppSort = lsGet("oppSort") || "benef";
 function renderStart() {
   const st = S.suivi.map(s => statsOf(s)), hasItem = S.suivi.length > 0, hasPrice = st.some(x => x.best), hasSerie = S.journal.length > 0;
   const el = $("#startCard"); el.hidden = true;
@@ -400,7 +422,8 @@ function renderStart() {
 }
 function renderCrafts() {
   renderStart();
-  const cmp = oppSort === "roi" ? (a, b) => (b.roi ?? -1e9) - (a.roi ?? -1e9) : (a, b) => (b.benef ?? -1e18) - (a.benef ?? -1e18);
+  const cmp = sortCmp("opp", { name: r => r.it?.n || "", strat: r => r.best ? stratTxt(r.best) : null, in: r => r.best?.in, out: r => r.best?.out, benef: r => r.benef, roi: r => r.roi, rel: r => reliability(r.s, r).score || null });
+  markSort("opp");
   const rows = stableOrder("crafts", S.suivi.map(s => ({ s, it: ITEMS.get(s.id), ...statsOf(s) })), r => r.s.id, cmp);
   keepFocus(() => {
     $("#crafts").innerHTML = rows.length ? rows.map(r => {
@@ -606,9 +629,11 @@ function renderPet() {
   const C = D.petcurve || []; const from = Math.max(0, Math.min(99, Math.floor(+$("#petFrom").value || 0))), to = Math.max(from + 1, Math.min(100, Math.floor(+$("#petTo").value || 100)));
   const need = Math.max(0, (C[to] || 0) - (C[from] || 0));
   $("#petXp").textContent = fmt(need);
-  const rows = stableOrder("pet", petIds().map(id => { const xi = xpInfo(id), pi = priceInfo(id); const per = xi.v > 0 && pi.v != null ? pi.v / xi.v * 1000 : null; return { id, xi, pi, per, qty: xi.v > 0 ? Math.ceil(need / xi.v) : null }; }),
-    r => r.id, (a, b) => (a.per ?? 1e18) - (b.per ?? 1e18) || resName(a.id).localeCompare(resName(b.id), "fr"));
-  const best = rows.find(r => r.per != null);
+  const pf = norm($("#pf").value || "");
+  const rows = stableOrder("pet", petIds().filter(id => !pf || norm(resName(id)).includes(pf)).map(id => { const xi = xpInfo(id), pi = priceInfo(id); const per = xi.v > 0 && pi.v != null ? pi.v / xi.v * 1000 : null; return { id, xi, pi, per, qty: xi.v > 0 ? Math.ceil(need / xi.v) : null }; }),
+    r => r.id, sortCmp("pet", { name: r => resName(r.id), xp: r => r.xi.v, price: r => r.pi.v, per: r => r.per, qty: r => r.qty, cost: r => r.per != null ? r.per * need / 1000 : null }));
+  markSort("pet");
+  const best = [...rows].filter(r => r.per != null).sort((a, b) => a.per - b.per)[0];
   $("#petBest").innerHTML = best ? `${esc(resName(best.id))}<small class="note" style="display:block;font-family:var(--body);font-size:12px">${fmt(best.per * need / 1000)} kamas</small>` : "–";
   const tagOf = x => x.src === "groupe" ? `<span class="grp-tag" title="Médiane de ${x.n} membre(s)">groupe</span>` : x.src === "table" ? `<span class="tag-w" title="Source : ${esc(x.from)}">table</span>` : x.src === "guide" ? `<span class="tag-g" title="Valeur sûre">guide</span>` : "";
   keepFocus(() => {
@@ -674,8 +699,9 @@ function renderRes() {
   const staleI = x => !x.st.best || (+x.s.pa > 0 && ageDays(x.s.ma) > 7) || (+x.s.pv > 0 && ageDays(x.s.mv) > 7);
   if (!missSnap) missSnap = new Set([...allRes.filter(staleR).map(x => "r" + x.rid), ...allRunes.filter(staleU).map(x => "u" + x.a), ...items.filter(staleI).map(x => "i" + x.s.id)]);
   const keepRow = (name, key) => (!f || norm(name).includes(f)) && (!onlyMiss || missSnap.has(key));
-  const runes = stableOrder("runes", allRunes.filter(x => keepRow(x.st[0], "u" + x.a)), x => x.a, (x, y) => ((x.pi.v != null) - (y.pi.v != null)) || x.st[0].localeCompare(y.st[0], "fr"));
-  const list = stableOrder("res", allRes.filter(x => keepRow(x.n, "r" + x.rid)), x => x.rid, (a, b) => ((a.pi.v != null) - (b.pi.v != null)) || a.n.localeCompare(b.n, "fr"));
+  const runes = stableOrder("runes", allRunes.filter(x => keepRow(x.st[0], "u" + x.a)), x => x.a, sortCmp("runes", { auto: x => (x.pi.v != null ? "1" : "0") + x.st[0], name: x => x.st[0], used: x => [...new Set(x.its)].join(", "), price: x => x.pi.v, date: x => +S.rp[x.a] > 0 ? -ageDays(S.rm[x.a]) : null }));
+  const list = stableOrder("res", allRes.filter(x => keepRow(x.n, "r" + x.rid)), x => x.rid, sortCmp("res", { auto: x => (x.pi.v != null ? "1" : "0") + x.n, name: x => x.n, used: x => [...new Set(x.its)].join(", "), rec: x => S.rec[x.rid] ? 1 : 0, price: x => x.pi.v, date: x => +S.prix[x.rid] > 0 ? -ageDays(S.maj[x.rid]) : null }));
+  markSort("res"); markSort("runes");
   const its = stableOrder("items", items.filter(x => keepRow(x.it?.n || "", "i" + x.s.id)), x => x.s.id, (a, b) => (a.it?.n || "").localeCompare(b.it?.n || "", "fr"));
   const empty = (n, what) => `<tr><td colspan="${n}" class="empty">${!S.suivi.length ? "Suis des items dans Opportunités pour voir les prix à renseigner." : onlyMiss ? `Tous les ${what} sont renseignés.` : "Rien ne correspond au filtre."}</td></tr>`;
   const upd = (own, d, pi) => own > 0 ? fdate(d) : pi.src === "groupe" ? `<span class="grp-tag">groupe</span>` : "–";
@@ -1018,7 +1044,6 @@ function setRunePts(a, v) { pendingPrix.add("rpt:" + a); const n = Math.max(1, M
 function setCfg(k, v) { pendingPrix.add("cfg:"); S.cfg = { ...S.cfg, [k]: v }; later("prix", () => Store.savePrix()); }
 document.addEventListener("input", e => {
   const t = e.target;
-  if (t.id === "oppSort") { oppSort = t.value; lsSet("oppSort", oppSort); renderCrafts(); applyRO(); return; }
   if (t.id === "budget" || t.id === "maxq" || t.id === "dropPct") { lsSet(t.id, t.value); renderCrafts(); applyRO(); return; }
   if (t.id === "rq") { rfilter = t.value; renderRes(); applyRO(); return; }
   if (!isMe()) return;
@@ -1251,6 +1276,7 @@ $("#xpDo").addEventListener("click", () => {
   toast(`${n} XP importées dans la table des familiers`);
 });
 $("#petAll").addEventListener("change", () => renderPet());
+$("#pf").addEventListener("input", () => renderPet());
 $("#planAll").addEventListener("change", e => { lsSet("planAll", e.target.checked ? "1" : ""); renderCrafts(); applyRO(); });
 ["budget", "maxq", "dropPct"].forEach(k => { const v = lsGet(k); if (v) $("#" + k).value = v; });
 if (lsGet("planAll")) $("#planAll").checked = true;

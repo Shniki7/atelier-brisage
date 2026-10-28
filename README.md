@@ -91,6 +91,7 @@ C'est une **estimation** : la formule n'est pas publiée par Ankama, le jet rée
 | `/` | Chercher un item à suivre |
 | `N` | Nouvelle série dans le journal |
 | `?` | Aide des raccourcis |
+| Clic sur un titre de colonne | Trier (un 2e clic inverse l'ordre) |
 
 ## Utiliser l'outil sur ton PC
 

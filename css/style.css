@@ -481,6 +481,11 @@ button.ghost:disabled:hover{background:transparent}
 .modal-card.wide{max-width:720px}
 #xpText{width:100%;font-family:var(--mono);font-size:12.5px;background:var(--surface-2);color:var(--fg);border:1px solid var(--line-2);border-radius:8px;padding:10px;resize:vertical}
 
+th.sortable{cursor:pointer;user-select:none;white-space:nowrap}
+th.sortable:hover{color:var(--fg)}
+th.sortable::after{content:attr(data-dir);display:inline-block;width:1.1em;margin-left:3px;color:var(--accent);font-size:10px}
+th.sortable.on{color:var(--fg)}
+
 /* ---------- lecture seule ---------- */
 body.ro .own-only{display:none!important}
 
