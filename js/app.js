@@ -319,7 +319,11 @@ function renderCrafts() {
         <td class="acts"><button class="ghost own-only" data-serie="${r.s.id}" title="Ajouter une série de cet item au journal">+&nbsp;Série</button><button class="ghost x" data-del="${r.s.id}" title="Retirer de la liste" aria-label="Retirer ${esc(nm)}">×</button></td></tr>`;
       if (isOpen) {
         const rec = recipeOf(r.s);
+        const costTxt = r.miss ? (r.cost ? "≥ " + fmt(r.cost) : "inconnu") : fmt(r.cost);
+        const brkTxt = r.est.val ? fmt(r.est.val) : r.est.part ? "≥ " + fmt(r.est.part) : "inconnu";
         html += `<tr class="detail"><td colspan="7"><div class="detail-grid">
+          <section class="dcard d-in">
+          <header><span class="dc-t"><span class="dc-ic">−</span>Recette · ce que tu dépenses</span><span class="dc-v">${costTxt}</span></header>
           <div class="recipe">
           <div class="rrow rhead"><span>Ressource</span><span style="text-align:right">Qté</span><span style="text-align:right">Prix unitaire</span><span style="text-align:right">Sous-total</span><span></span></div>
           ${rec.map(([rid, q], k) => { const p = S.prix[rid], u = unitPrice(rid); const free = S.rec[rid] && S.cfg.recolte === "gratuit"; return `<div class="rrow">
@@ -329,7 +333,9 @@ function renderCrafts() {
             <span class="st">${u != null ? fmt(u * q) : "–"}</span>
             <button class="ghost x" data-rdel="${r.s.id}" data-k="${k}" aria-label="Retirer l'ingrédient" title="Retirer l'ingrédient">×</button></div>`; }).join("")}
           <div class="rfoot"><span class="note">Coût : ${r.miss ? (r.cost ? `au moins <b class="mono">${fmt(r.cost)}</b>` : "inconnu") + ` · ${r.miss} prix manquant${r.miss > 1 ? "s" : ""}` : `<b class="mono">${fmt(r.cost)}</b>`}</span>
-            ${r.s.r ? `<button class="ghost" data-rreset="${r.s.id}">Revenir à la recette du jeu</button>` : ""}</div></div>
+            ${r.s.r ? `<button class="ghost" data-rreset="${r.s.id}">Revenir à la recette du jeu</button>` : ""}</div></div></section>
+          <section class="dcard d-out">
+          <header><span class="dc-t"><span class="dc-ic">+</span>Brisage · ce que tu récupères</span><span class="dc-v">${brkTxt}</span></header>
           ${r.est.lines.length ? `<div class="recipe">
             <div class="rrow runes rhead"><span>Rune obtenue (jet moyen)</span><span style="text-align:right">Runes</span><span style="text-align:right">Prix rune</span><span style="text-align:right">Valeur</span></div>
             ${r.est.lines.map(l => `<div class="rrow runes"><span class="rn">${esc(l.nom)} <span class="note">${l.lo === l.hi ? l.lo : l.lo + "–" + l.hi}${l.pts > 1 ? ` · ${l.pts} pts/rune` : ""}</span></span>
@@ -340,7 +346,7 @@ function renderCrafts() {
               ? `Brisage estimé : <b class="mono">${fmt(r.est.val)}</b> au coefficient ${r.s.coef ?? 100} %${tx ? `, soit <b class="mono">${fmt(r.est.val * (1 - tx))}</b> après ${Math.round(tx * 1000) / 10} % de taxe` : ""}.`
               : `Brisage estimé : au moins <b class="mono">${fmt(r.est.part)}</b> · ${r.est.miss} prix de rune${r.est.miss > 1 ? "s" : ""} manquant${r.est.miss > 1 ? "s" : ""}. Les runes sont triées de la plus importante à la moins importante : commence par le haut.`}</span></div>
           </div>` : `<p class="note">Pas d'effets connus pour cet item : saisis sa valeur de brisage à la main.</p>`}
-          </div></td></tr>`;
+          </section></div></td></tr>`;
       }
       return html;
     }).join("") : `<tr><td colspan="7" class="empty">${isMe() ? "Aucun item suivi. Cherche un item ci-dessus pour l'ajouter (raccourci : /)." : "Ce membre ne suit encore aucun item."}</td></tr>`;
