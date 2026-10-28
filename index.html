@@ -84,7 +84,7 @@
     <div>
       <div class="nav-l">Menu</div>
       <nav class="nav" role="tablist" aria-label="Sections">
-        <button role="tab" aria-selected="true" data-tab="home"><svg class="i"><use href="#i-home"/></svg><span class="lab">Aujourd'hui</span></button>
+        <button role="tab" aria-selected="true" data-tab="home"><svg class="i"><use href="#i-home"/></svg><span class="lab">Mes kamas</span></button>
         <button role="tab" aria-selected="false" data-tab="res"><svg class="i"><use href="#i-res"/></svg><span class="lab"><i class="stepno">1</i>Prix du marché</span><span class="count" id="cRes">0</span></button>
         <button role="tab" aria-selected="false" data-tab="crafts"><svg class="i"><use href="#i-craft"/></svg><span class="lab"><i class="stepno">2</i>Opportunités</span><span class="count" id="cCrafts">0</span></button>
         <button role="tab" aria-selected="false" data-tab="jr"><svg class="i"><use href="#i-jr"/></svg><span class="lab"><i class="stepno">3</i>Mes séries</span><span class="count" id="cJr">0</span></button>
@@ -119,16 +119,28 @@
 
       <!-- AUJOURD'HUI -->
       <section id="v-home" class="stack" hidden>
-        <div class="cycle" id="cycle"></div>
-        <div class="next" id="nextAction"></div>
-        <div class="dgrid">
-          <div class="panel span2">
-            <div class="panel-head"><h2>À traiter</h2><span class="sub">Tes séries en cours, de la plus ancienne à la plus récente</span></div>
+        <div class="flow">
+          <div class="panel fstep">
+            <div class="panel-head"><h2><span class="fn">1</span>Mes kamas</h2><span class="sub">Mon point de départ</span></div>
+            <div class="field"><label for="homeCap">Kamas que je veux engager</label><input id="homeCap" class="num keep" type="number" min="0" step="100000"></div>
+            <ul class="kv" id="homeCapKv"></ul>
+          </div>
+          <div class="panel fstep wide">
+            <div class="panel-head"><h2><span class="fn">2</span>Où les placer</h2><span class="sub" id="homePlanSub"></span></div>
+            <p class="note fmoy">Pour chaque item, l'outil compare tes 4 moyens : <b>crafter puis revendre</b>, <b>crafter puis briser</b>, <b>acheter puis revendre</b>, <b>acheter puis briser</b>. Il garde le plus rentable.</p>
+            <div class="tbl-wrap"><table class="t-plan"><thead><tr><th class="l">Item</th><th class="l">Moyen</th><th>Qté</th><th>J'engage</th><th>Je gagne</th><th></th></tr></thead><tbody id="homePlan"></tbody></table></div>
+            <p class="note" id="homePlanNote"></p>
+          </div>
+          <div class="panel fstep wide">
+            <div class="panel-head"><h2><span class="fn">3</span>En cours</h2><span class="sub">Kamas engagés, pas encore revenus</span></div>
             <div class="tbl-wrap"><table class="t-todo"><tbody id="homeTodo"></tbody></table></div>
           </div>
-          <div class="panel">
-            <div class="panel-head"><h2>Meilleures opportunités</h2></div>
-            <ul class="kv home-opp" id="homeOpp"></ul>
+          <div class="panel fstep finish">
+            <div class="panel-head"><h2><span class="fn">4</span>Ligne d'arrivée</h2>
+              <div class="seg sm" id="homePer"><button type="button" data-hp="semaine">Semaine</button><button type="button" data-hp="mois">Mois</button><button type="button" data-hp="tout">Tout</button></div></div>
+            <div class="tot big"><span>Mon bénéfice</span><b id="homeBen">0</b></div>
+            <ul class="kv" id="homeBenKv"></ul>
+            <p class="note">Bénéfice = kamas récupérés (ventes, ou runes obtenues) − kamas engagés, sur les séries terminées.</p>
           </div>
         </div>
       </section>
@@ -450,7 +462,7 @@
       <div><kbd>Maj</kbd> + <kbd>Tab</kbd></div><div>Case précédente dans la même colonne</div>
       <div><kbd>↑</kbd> <kbd>↓</kbd></div><div>Monter ou descendre dans une colonne de nombres</div>
       <div class="kh">Partout</div>
-      <div><kbd>0</kbd> à <kbd>5</kbd></div><div>Aujourd'hui, Prix du marché, Opportunités, Mes séries, Résultats, Groupe</div>
+      <div><kbd>0</kbd> à <kbd>5</kbd></div><div>Mes kamas, Prix du marché, Opportunités, Mes séries, Résultats, Groupe</div>
       <div><kbd>/</kbd></div><div>Chercher un item à suivre</div>
       <div><kbd>N</kbd></div><div>Nouvelle série dans le journal</div>
       <div><kbd>B</kbd> / <kbd>V</kbd></div><div>Journal : marquer la ligne sélectionnée Brisé / Vendu</div>

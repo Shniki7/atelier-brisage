@@ -491,6 +491,15 @@ th.sortable.on{color:var(--fg)}
 button.danger{background:var(--bad);color:#fff;border-color:transparent}
 button.danger:disabled{opacity:.4;cursor:not-allowed}
 
+.flow{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:18px;align-items:start}
+.flow .fstep.wide{grid-column:span 2}
+.flow .fstep{display:grid;gap:12px;align-content:start}
+.fn{display:inline-grid;place-items:center;width:24px;height:24px;border-radius:50%;background:var(--accent);color:var(--on-accent);font-size:12.5px;margin-right:9px;vertical-align:1px}
+.fstep.finish .tot.big b{font-size:28px}
+.fmoy{margin:0}
+.seg.sm button{padding:4px 10px;font-size:12px}
+@media (max-width:1000px){.flow{grid-template-columns:1fr}.flow .fstep.wide{grid-column:auto}}
+
 /* ---------- lecture seule ---------- */
 body.ro .own-only{display:none!important}
 

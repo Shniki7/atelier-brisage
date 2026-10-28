@@ -292,7 +292,7 @@ function renderHeader() {
 $("#members").addEventListener("click", e => { const b = e.target.closest("[data-view]"); if (b) setView(b.dataset.view); });
 $("#btnBackMe").addEventListener("click", () => setView(ME));
 const TITLES = {
-  home: ["Aujourd'hui", "Où tu en es, et la prochaine chose à faire"],
+  home: ["Mes kamas", "Ce que j'engage, où je le place, ce que je gagne"],
   dash: ["Résultats", "Ce que tu as vraiment gagné : par jour, semaine, mois, année"],
   grp: ["Le groupe", "Bilans et classement des membres"],
   pet: ["Familiers", "Monter un familier au meilleur prix"],
@@ -540,8 +540,8 @@ function renderPlan(rows) {
 }
 
 // ----- Aujourd'hui : le cycle Préparer → Décider → Exécuter → Analyser
-function planFor(rows) {
-  const budget = Math.max(0, +(lsGet("budget") || $("#budget").value) || 0), maxq = Math.max(1, Math.min(50, Math.floor(+(lsGet("maxq") || $("#maxq").value) || 1)));
+function planFor(rows, forced) {
+  const budget = forced != null ? forced : Math.max(0, +(lsGet("budget") || $("#budget").value) || 0), maxq = Math.max(1, Math.min(50, Math.floor(+(lsGet("maxq") || $("#maxq").value) || 1)));
   const drop = Math.min(50, Math.max(0, +(lsGet("dropPct") || 0))) / 100;
   const cands = rows.filter(r => r.ok && r.benef > 0).map(r => ({ ...r, cost: r.best.in, brk: r.best.out }));
   return { budget, ...optimizePlan(cands, budget, maxq, drop) };
@@ -559,52 +559,44 @@ function cycleState() {
   const week = weekBen(S);
   return { st, miss, stale, plan, open, toBreak, toSell, launchedToday, week, hasItems: S.suivi.length > 0 };
 }
+let homePer = lsGet("homePer") || "mois";
 function renderHome() {
   const c = cycleState(), me = isMe();
-  const steps = [
-    { k: "res", n: 1, t: "Préparer", sub: "Mettre à jour les prix",
-      done: c.hasItems && !c.miss && !c.stale,
-      txt: !c.hasItems ? "Suis d'abord quelques items" : c.miss ? `${c.miss} prix manquant${c.miss > 1 ? "s" : ""}${c.stale ? ` · ${c.stale} à rafraîchir` : ""}` : c.stale ? `${c.stale} prix de plus de 7 jours` : "Tous tes prix sont à jour",
-      cta: !c.hasItems ? ["crafts", "Suivre un item"] : ["res", c.miss || c.stale ? "Mettre à jour" : "Voir les prix"] },
-    { k: "crafts", n: 2, t: "Décider", sub: "Choisir quoi faire",
-      done: c.launchedToday > 0,
-      txt: c.plan.picks.length ? `Plan pour ${kfmt(c.plan.budget)} : <b class="pos">+${fmt(c.plan.ben)}</b> en ${c.plan.picks.length} item${c.plan.picks.length > 1 ? "s" : ""}` : c.hasItems ? "Aucune option rentable chiffrée" : "Rien à proposer pour l'instant",
-      cta: ["crafts", c.launchedToday ? `${c.launchedToday} série${c.launchedToday > 1 ? "s" : ""} lancée${c.launchedToday > 1 ? "s" : ""} aujourd'hui` : "Voir le plan et lancer"] },
-    { k: "jr", n: 3, t: "Exécuter", sub: "Briser, vendre, noter",
-      done: S.journal.length > 0 && !c.open.length,
-      warn: c.open.some(e => ageDays(e.achat) > 7),
-      txt: c.open.length ? `${c.toBreak.length} à briser · ${c.toSell.length} à vendre · ${fmt(c.open.reduce((a, e) => a + (+e.cout || 0), 0))} immobilisés` : S.journal.length ? "Rien en cours" : "Aucune série pour l'instant",
-      cta: ["jr", c.open.length ? "Traiter mes séries" : "Voir mes séries"] },
-    { k: "dash", n: 4, t: "Analyser", sub: "Voir ce que j'ai gagné",
-      done: lsGet("lastDash") === today(),
-      txt: `Cette semaine : <b class="${c.week < 0 ? "neg" : c.week > 0 ? "pos" : ""}">${c.week > 0 ? "+" : ""}${fmt(c.week)}</b>`,
-      cta: ["dash", "Voir les résultats"] }
-  ];
-  const next = steps.find(x => !x.done && (x.k !== "dash" || S.journal.length)) || steps[3];
-  $("#cycle").innerHTML = steps.map(x => `<button type="button" class="cstep ${x.done ? "done" : ""} ${x === next ? "now" : ""} ${x.warn ? "warn" : ""}" data-goto="${x.cta[0]}">
-      <span class="cs-h"><span class="cs-n">${x.done ? "✓" : x.n}</span><span><b>${x.t}</b><small>${x.sub}</small></span></span>
-      <span class="cs-t">${x.txt}</span><span class="cs-c">${x.cta[1]} →</span></button>`).join("");
-  const nextTxt = {
-    res: !c.hasItems ? "Commence par suivre les items que tu crafts ou brises." : `Mets à jour ${c.miss ? `les ${c.miss} prix manquants` : `les ${c.stale} prix anciens`} : tout le reste en dépend.`,
-    crafts: c.plan.picks.length ? `Le meilleur plan du jour rapporte ${fmt(c.plan.ben)} : ${c.plan.picks.slice(0, 2).map(p => `${p.q} × ${p.it.n}`).join(", ")}${c.plan.picks.length > 2 ? "…" : ""}.` : "Complète les prix de tes items pour voir ce qui est rentable.",
-    jr: `${c.toBreak.length ? `${c.toBreak.length} série${c.toBreak.length > 1 ? "s" : ""} à briser` : ""}${c.toBreak.length && c.toSell.length ? " et " : ""}${c.toSell.length ? `${c.toSell.length} à vendre` : ""} : marque-les au fur et à mesure.`,
-    dash: "Ta journée est à jour. Jette un œil à tes résultats et à ceux du groupe."
-  }[next.k];
-  $("#nextAction").innerHTML = `<span class="na-l">Prochaine étape</span><span class="na-t">${esc(nextTxt)}</span><button class="primary" type="button" data-goto="${next.cta[0]}">${next.cta[1]}</button>`;
-  // à traiter
+  // 1. mes kamas
+  const cap = Math.max(0, +(lsGet("budget") || $("#budget").value) || 0);
+  if (document.activeElement !== $("#homeCap")) $("#homeCap").value = cap || "";
+  const engaged = c.open.reduce((a, e) => a + (+e.cout || 0), 0), free = Math.max(0, cap - engaged);
+  $("#homeCapKv").innerHTML = `<li><span>Déjà engagés (en cours)</span><b class="mono">${fmt(engaged)}</b></li><li><span>Encore disponibles</span><b class="mono">${fmt(free)}</b></li>`;
+  // 2. où les placer : le plan optimal pour les kamas disponibles
+  const plan = planFor(c.st, free);
+  $("#homePlanSub").textContent = plan.picks.length ? `Avec ${kfmt(free)} : +${kfmt(plan.ben)} attendus` : "";
+  $("#homePlan").innerHTML = plan.picks.length ? plan.picks.slice(0, 8).map(p => `<tr><td class="l"><b>${esc(p.it.n)}</b></td><td class="l">${stratTxt(p.best)}</td><td class="m"><b>${p.q}</b></td><td class="m">${fmt(p.q * p.cost)}</td><td class="m pos"><b>+${fmt(p.gain)}</b></td>
+      <td class="acts">${me ? `<button class="ghost" data-launch-h="${p.it.id}" data-q="${p.q}" type="button" title="J'y vais : enregistrer cette série">Lancer</button>` : ""}</td></tr>`).join("")
+    : `<tr><td colspan="6" class="empty">${!cap ? "Indique d'abord combien de kamas tu veux engager." : !c.hasItems ? "Aucun item suivi. Ajoute les items qui t'intéressent dans Opportunités." : !free ? "Tous tes kamas sont déjà engagés : termine tes séries en cours." : "Aucune option rentable chiffrée avec tes prix actuels."}</td></tr>`;
+  $("#homePlanNote").innerHTML = (c.miss ? `<button class="linkish" data-goto="res" type="button">Il manque ${c.miss} prix : les compléter</button> pour un plan plus juste. ` : c.stale ? `<button class="linkish" data-goto="res" type="button">${c.stale} prix ont plus de 7 jours : les mettre à jour</button>. ` : "") + `<button class="linkish" data-goto="crafts" type="button">Voir le détail par item</button>`;
+  // 3. en cours
   const todo = [...c.open].sort((a, b) => (a.achat || "").localeCompare(b.achat || ""));
   $("#homeTodo").innerHTML = todo.length ? todo.slice(0, 12).map(e => {
     const sg = stratOf(e.src, e.dest), brk = c.toBreak.includes(e), age = ageDays(e.achat);
-    return `<tr><td class="l"><b>${e.qte || 1} × ${esc(e.nom)}</b><small class="strat">${stratTxt(sg)} · lancé ${age === 0 ? "aujourd'hui" : age === 1 ? "hier" : `il y a ${age} jours`}${age > 7 ? ' <span class="miss-t">· capital qui dort</span>' : ""}</small></td>
+    return `<tr><td class="l"><b>${e.qte || 1} × ${esc(e.nom)}</b><small class="strat">${stratTxt(sg)} · lancé ${age === 0 ? "aujourd'hui" : age === 1 ? "hier" : `il y a ${age} jours`}${age > 7 ? ' <span class="miss-t">· kamas qui dorment</span>' : ""}</small></td>
       <td class="m">${fmt(+e.cout || 0)}</td>
       <td class="l"><span class="status ${brk ? "s-run" : "s-brk"}">${brk ? "À briser" : "À vendre"}</span></td>
       <td class="acts">${me ? `<button class="quick" data-hquick="${brk ? "brise" : "vendu"}" data-jid="${e._id}">${brk ? "Brisé" : "Vendu"}</button>` : ""}</td></tr>`;
-  }).join("") : `<tr><td class="empty">${S.journal.length ? "Rien en cours. Lance une série depuis le plan." : "Aucune série. Une fois tes prix renseignés, lance ta première série depuis Opportunités."}</td></tr>`;
-  // opportunités
-  const best = c.st.filter(r => r.ok && r.benef > 0).sort((a, b) => b.benef - a.benef).slice(0, 5);
-  $("#homeOpp").innerHTML = best.length ? best.map(r => `<li><span><b>${esc(r.it?.n || r.s.id)}</b><small class="strat">${stratTxt(r.best)} · ${pillTxt(r.roi)}</small></span><span class="ho-r"><b class="mono pos">+${fmt(r.benef)}</b>${me ? `<button class="ghost" data-launch-h="${r.s.id}" type="button">Lancer</button>` : ""}</span></li>`).join("")
-    : `<li><span class="note">Aucune opportunité chiffrée pour l'instant.</span></li>`;
+  }).join("") + (todo.length > 12 ? `<tr><td colspan="4" class="note"><button class="linkish" data-goto="jr" type="button">Voir les ${todo.length} séries</button></td></tr>` : "")
+    : `<tr><td class="empty">Rien en cours. Clique « Lancer » sur une ligne de l'étape 2.</td></tr>`;
+  // 4. ligne d'arrivée
+  document.querySelectorAll("#homePer [data-hp]").forEach(b => b.setAttribute("aria-pressed", b.dataset.hp === homePer));
+  const from = homePer === "tout" ? null : GR[homePer].start(new Date());
+  let inv = 0, back = 0, n = 0;
+  for (const e of S.journal) { const R = realize(e); if (!R) continue; const d = pD(R.date); if (from && !(d && d >= from)) continue; inv += +e.cout || 0; back += R.ventes; n++; }
+  const ben = back - inv;
+  $("#homeBen").textContent = (ben > 0 ? "+" : "") + fmt(ben); $("#homeBen").style.color = ben < 0 ? "var(--bad)" : ben > 0 ? "var(--good)" : "var(--fg)";
+  $("#homeBenKv").innerHTML = `<li><span>Kamas engagés</span><b class="mono">${fmt(inv)}</b></li><li><span>Kamas récupérés</span><b class="mono">${fmt(back)}</b></li>
+    <li><span>Rendement</span><b class="mono">${inv ? pillTxt(ben / inv) : "–"}</b></li><li><span>Séries terminées</span><b class="mono">${n}</b></li>
+    <li><span></span><button class="linkish" data-goto="dash" type="button">Voir les graphiques</button></li>`;
 }
+$("#homeCap").addEventListener("change", e => { const v = Math.max(0, +e.target.value || 0); lsSet("budget", String(v)); $("#budget").value = v; deferRender(); });
+document.addEventListener("click", e => { const b = e.target.closest("[data-hp]"); if (!b) return; homePer = b.dataset.hp; lsSet("homePer", homePer); renderHome(); });
 
 // ----- Familiers : XP par ressource (moi > groupe > guide) et coût pour atteindre un niveau
 const resName = id => D.allres?.[id] || D.res?.[id] || D.xptable?.names?.[id] || "Ressource " + id;
@@ -1225,7 +1217,7 @@ $("#startHide").addEventListener("click", () => { lsSet("startHidden", "1"); $("
 $("#v-home").addEventListener("click", e => {
   const g = e.target.closest("[data-goto]"); if (g) { const t = g.dataset.goto; if (t === "res") { missDirty(); $("#mkMissing").checked = true; } setTab(t); window.scrollTo({ top: 0 }); return; }
   const q = e.target.closest("[data-hquick]"); if (q && isMe()) { quickJr(q.dataset.jid, q.dataset.hquick); render(); return; }
-  const l = e.target.closest("[data-launch-h]"); if (l && isMe()) { quickSerie(+l.dataset.launchH); return; }
+  const l = e.target.closest("[data-launch-h]"); if (l && isMe()) { quickSerie(+l.dataset.launchH, +l.dataset.q || 1); return; }
 });
 ["petFrom", "petTo"].forEach(k => { const v = lsGet(k); if (v) $("#" + k).value = v; $("#" + k).addEventListener("input", e => { lsSet(k, e.target.value); renderPet(); }); });
 $("#pq").addEventListener("input", e => petSearch(e.target.value));
