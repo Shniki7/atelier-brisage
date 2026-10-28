@@ -6,7 +6,8 @@ rules_version = '2';
 //
 // Qui peut faire quoi :
 // - Seul quelqu'un qui connaît le code peut créer son profil.
-// - Tout membre (= quelqu'un qui a un profil) lit les profils et les journaux de tout le groupe.
+// - Tout membre (= quelqu'un qui a un profil) lit les profils et les journaux de tout le groupe,
+//   sauf les profils mis en « Privé » (seuls leurs prix restent partagés).
 // - Chacun ne peut modifier que ses propres données.
 
 service cloud.firestore {
@@ -31,10 +32,16 @@ service cloud.firestore {
 
       allow delete: if signedIn() && request.auth.uid == uid;
 
-      // prix, items suivis, journal
+      // prix, items suivis, journal, panier
+      // Profil privé (champ prive = true) : les autres membres ne lisent plus ses données,
+      // sauf ses prix (data/prix), qui restent partagés pour les prix du groupe.
       match /{document=**} {
-        allow read: if member();
+        allow read: if signedIn() && (request.auth.uid == uid
+          || (member() && get(/databases/$(database)/documents/profiles/$(uid)).data.get('prive', false) != true));
         allow write: if signedIn() && request.auth.uid == uid;
+      }
+      match /data/prix {
+        allow read: if member();
       }
     }
   }

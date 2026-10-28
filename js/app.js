@@ -214,7 +214,13 @@ function startApp(profile) {
   // tous les membres du groupe
   unsubs.push(db.collection("profiles").onSnapshot(snap => {
     const seen = new Set();
-    snap.docs.forEach(d => { seen.add(d.id); const m = member(d.id); const first = !m.p.pseudo; m.p = d.data(); if (first || !m.subscribed) subscribeMember(d.id); });
+    snap.docs.forEach(d => { seen.add(d.id); const m = member(d.id); const first = !m.p.pseudo, wasPriv = !!m.p.prive; m.p = d.data();
+      if (d.id === ME) MYPROFILE = { ...MYPROFILE, ...m.p };
+      if (first || !m.subscribed) subscribeMember(d.id);
+      else if (d.id !== ME && wasPriv !== !!m.p.prive) subPrivate(d.id);   // un membre a changé sa visibilité
+      if (isHidden(d.id)) { m.suivi = []; m.journal = []; }
+    });
+    if (isHidden(VIEW)) setView(ME);
     for (const uid of [...MEMBERS.keys()]) if (!seen.has(uid) && uid !== ME) MEMBERS.delete(uid);
     if (!MEMBERS.has(VIEW)) setView(ME);
     $("#meAv").style.background = colorOf(ME);
@@ -246,14 +252,25 @@ function subscribeMember(uid) {
     if (!snap.exists) { try { const old = JSON.parse(lsGet("cart-" + ME) || "[]"); if (old.length) { items = old; base.collection("data").doc("panier").set({ items }).catch(fail); } } catch (e) { } }
     lsSet("cart-" + ME, ""); m.cart = items.map(x => ({ ...x })); if (tab === "home" && D && VIEW) renderHome();
   }, onErr));
-  unsubs.push(base.collection("data").doc("suivi").onSnapshot(snap => {
+  subPrivate(uid);
+}
+// Profil privé : les autres membres ne lisent plus ses items suivis ni ses séries (ses prix restent partagés pour les prix du groupe)
+const isHidden = uid => uid !== ME && !!MEMBERS.get(uid)?.p?.prive;
+function subPrivate(uid) {
+  const m = member(uid), base = db.doc(`profiles/${uid}`);
+  (m.unsubP || []).forEach(f => f()); m.unsubP = []; m.legacy = false;
+  if (isHidden(uid)) { m.suivi = []; m.journal = []; return; }
+  const errP = e => { if (e.code === "permission-denied" && uid !== ME) { m.suivi = []; m.journal = []; render(); return; } onErr(e); };
+  m.unsubP.push(base.collection("data").doc("suivi").onSnapshot(snap => {
     if (uid === ME && timers.suivi) return; // modification locale en attente d'enregistrement
+    if (isHidden(uid)) return;
     const d = snap.data() || {}; m.suivi = (d.items || []).map(x => ({ ...x })); render();
-  }, onErr));
+  }, errP));
   // Journal : un seul document par membre (data/journal) au lieu d'un document par série.
   // À 10 joueurs, relire chaque série de chaque membre à chaque ouverture dépassait le quota gratuit de Firebase en ~3 mois.
-  unsubs.push(base.collection("data").doc("journal").onSnapshot(async snap => {
+  m.unsubP.push(base.collection("data").doc("journal").onSnapshot(async snap => {
     if (uid === ME && timers.journal) return; // modification locale en attente d'enregistrement
+    if (isHidden(uid)) return;
     if (!snap.exists) {
       // ancienne version : séries rangées une par une ; lecture unique, puis conversion par le propriétaire
       if (m.legacy) return; m.legacy = true;
@@ -264,7 +281,7 @@ function subscribeMember(uid) {
       render(); return;
     }
     m.journal = ((snap.data() || {}).items || []).map(x => ({ ...x })); render();
-  }, onErr));
+  }, errP));
 }
 function onErr(e) { console.error(e); showError(e.code === "permission-denied" ? "Lecture refusée par Firebase : vérifie que les règles Firestore sont bien publiées." : "Lecture impossible : " + (e.code || e.message)); }
 function fail(e) {
@@ -319,14 +336,17 @@ function weekBen(m) {
 }
 function renderHeader() {
   $("#members").innerHTML = membersSorted().map(([uid, m]) => { const b = weekBen(m);
+    if (isHidden(uid)) return `<button class="mem locked" type="button" data-view="${uid}" title="${esc(m.p.pseudo)} a rendu son profil privé"><span class="avatar sm" style="background:${colorOf(uid)}">${esc(initials(m.p.pseudo))}</span><span class="nm">${esc(m.p.pseudo)}</span><span class="v">privé</span></button>`;
     return `<button class="mem" type="button" data-view="${uid}" aria-current="${uid === VIEW}"><span class="avatar sm" style="background:${colorOf(uid)}">${esc(initials(m.p.pseudo))}</span><span class="nm">${esc(m.p.pseudo)}${uid === ME ? " (moi)" : ""}</span><span class="v ${b > 0 ? "up" : b < 0 ? "dn" : ""}">${b ? (b > 0 ? "+" : "") + kfmt(b) : "–"}</span></button>`; }).join("");
   $("#meSrv").textContent = MYPROFILE?.serveur || "";
+  const priv = !!MYPROFILE?.prive; $("#privLab").textContent = priv ? "Privé" : "Visible"; $("#btnPriv").classList.toggle("on", priv);
+  $("#btnPriv").title = priv ? "Ton profil est privé : le groupe ne voit ni tes séries ni tes bilans. Clique pour le rendre visible." : "Ton profil est visible par le groupe. Clique pour le rendre privé.";
   $("#roBanner").hidden = isMe();
   $("#roName").textContent = S.p?.pseudo || "";
   document.body.classList.toggle("ro", ro());
   $("#cGrp").textContent = membersSorted().length;
 }
-$("#members").addEventListener("click", e => { const b = e.target.closest("[data-view]"); if (b) setView(b.dataset.view); });
+$("#members").addEventListener("click", e => { const b = e.target.closest("[data-view]"); if (!b) return; if (isHidden(b.dataset.view)) { toast("Ce profil est privé"); return; } setView(b.dataset.view); });
 $("#btnBackMe").addEventListener("click", () => setView(ME));
 const TITLES = {
   home: ["Mes kamas", "Ce que j'engage, où je le place, ce que je gagne"],
@@ -1069,7 +1089,7 @@ function renderGroup() {
   const from = ggran === "tout" ? null : GR[ggran].start(now);
   const lab = { semaine: "cette semaine", mois: "ce mois-ci", annee: "cette année", tout: "depuis le début" }[ggran];
   $("#hGrpBar").textContent = "Classement · " + lab;
-  const M = membersSorted().map(([uid, m]) => {
+  const M = membersSorted().filter(([uid]) => !isHidden(uid)).map(([uid, m]) => {
     let ven = 0, cout = 0, n = 0, last = "";
     for (const e of m.journal) {
       const R = realize(e); const dts = [e.achat, e.brisage, e.vente].filter(Boolean).sort(); if (dts.length && dts[dts.length - 1] > last) last = dts[dts.length - 1];
@@ -1469,6 +1489,11 @@ function applyTheme() {
   if (theme === "system") delete document.documentElement.dataset.theme; else document.documentElement.dataset.theme = theme;
   $("#themeLab").textContent = THEME_LAB[theme]; reTheme();
 }
+$("#btnPriv").addEventListener("click", () => {
+  const priv = !MYPROFILE?.prive;
+  db.doc(`profiles/${ME}`).update({ prive: priv }).then(() => toast(priv ? "Profil privé : le groupe ne voit plus tes séries ni tes bilans" : "Profil visible par le groupe")).catch(fail);
+  MYPROFILE = { ...MYPROFILE, prive: priv }; member(ME).p.prive = priv; renderHeader();
+});
 $("#btnTheme").addEventListener("click", () => { theme = THEMES[(THEMES.indexOf(theme) + 1) % 3]; lsSet("theme", theme); applyTheme(); toast("Thème : " + THEME_LAB[theme].toLowerCase()); });
 $("#themeLab").textContent = THEME_LAB[theme];
 $("#dataPanel").addEventListener("click", e => { if (e.target.id === "dataPanel") $("#dataPanel").hidden = true; });
