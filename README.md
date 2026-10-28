@@ -3,6 +3,7 @@
 Outil de rentabilité du craft et du brisage pour **Dofus 3**, à partager entre amis.
 
 - **2 799 recettes d'équipements Dofus 3**, extraites des fichiers du jeu et mises à jour chaque semaine par GitHub.
+- **Aujourd'hui** (page d'accueil) : le cycle Préparer → Décider → Exécuter → Analyser, l'état de chaque étape, la prochaine chose à faire et les séries à traiter.
 - **Opportunités** : pour chaque item, la meilleure des 4 options (crafter ou acheter, puis briser ou revendre), avec un indice de fiabilité, et le plan qui rapporte le plus pour ton budget.
 - **Prix du marché** : tous tes prix au même endroit (ressources, runes, items), avec les prix proposés par ton groupe.
 - **Mes séries** : chaque série, de l'achat à la vente, avec un bouton par étape (Brisé, Vendu).

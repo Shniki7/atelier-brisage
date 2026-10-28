@@ -26,7 +26,7 @@ let ME = null, MYPROFILE = null;            // utilisateur connecté
 const MEMBERS = new Map();                  // uid -> { p, prix, maj, suivi, journal, loaded }
 let VIEW = null;                            // uid du profil affiché
 let S = blank();                            // données du profil affiché
-let open = new Set(), tab = lsGet("tab") || "dash", rfilter = "";
+let open = new Set(), tab = "home", rfilter = "";
 let gran = lsGet("gran") || "semaine", ggran = lsGet("ggran") || "semaine", demoOn = true, charts = {};
 const pendingPrix = new Set();
 const pendingJ = new Map();                 // saisies du journal pas encore confirmées par le serveur : id -> {champ: valeur}
@@ -289,7 +289,8 @@ function renderHeader() {
 $("#members").addEventListener("click", e => { const b = e.target.closest("[data-view]"); if (b) setView(b.dataset.view); });
 $("#btnBackMe").addEventListener("click", () => setView(ME));
 const TITLES = {
-  dash: ["Tableau de bord", "Bénéfices, ventes et rendement réel"],
+  home: ["Aujourd'hui", "Où tu en es, et la prochaine chose à faire"],
+  dash: ["Résultats", "Ce que tu as vraiment gagné : par jour, semaine, mois, année"],
   grp: ["Le groupe", "Bilans et classement des membres"],
   crafts: ["Opportunités", "Quoi crafter ou acheter, et quoi en faire, pour gagner le plus"],
   res: ["Prix du marché", "Tous tes prix au même endroit"],
@@ -300,7 +301,8 @@ function setTab(t) {
   tab = t; lsSet("tab", t);
   $("#pageTitle").textContent = TITLES[t][0]; $("#pageSub").textContent = TITLES[t][1];
   document.querySelectorAll("nav [data-tab]").forEach(x => x.setAttribute("aria-selected", x.dataset.tab === t));
-  ["dash", "grp", "crafts", "res", "jr"].forEach(x => $("#v-" + x).hidden = x !== t);
+  ["home", "dash", "grp", "crafts", "res", "jr"].forEach(x => $("#v-" + x).hidden = x !== t);
+  if (t === "dash") lsSet("lastDash", today());
   render();
 }
 document.querySelector("nav").addEventListener("click", e => { const b = e.target.closest("[data-tab]"); if (b) setTab(b.dataset.tab); });
@@ -314,6 +316,7 @@ function render() {
   $("#cRes").textContent = nMiss || "✓"; $("#cRes").title = nMiss ? `${nMiss} prix à compléter` : "Tous les prix sont renseignés";
   const nRun = S.journal.filter(e => !(+e.encaisse > 0)).length;
   $("#cJr").textContent = nRun; $("#cJr").title = `${nRun} série(s) en cours`;
+  if (tab === "home") renderHome();
   if (tab === "dash") renderDash();
   if (tab === "grp") renderGroup();
   if (tab === "crafts") renderCrafts();
@@ -384,7 +387,7 @@ function realOf(itemId, M = S) {
 let oppSort = lsGet("oppSort") || "benef";
 function renderStart() {
   const st = S.suivi.map(s => statsOf(s)), hasItem = S.suivi.length > 0, hasPrice = st.some(x => x.best), hasSerie = S.journal.length > 0;
-  const el = $("#startCard"); el.hidden = !isMe() || (hasItem && hasPrice && hasSerie) || lsGet("startHidden") === "1";
+  const el = $("#startCard"); el.hidden = true;
   const step = (ok, n, t, d) => `<li class="${ok ? "ok" : ""}"><span class="n">${ok ? "✓" : n}</span><span><b>${t}</b><small>${d}</small></span></li>`;
   $("#startSteps").innerHTML = step(hasItem, 1, "Suis un item", "Tape son nom dans « Mes items », ex. Bottes de la Reine des Voleurs.")
     + step(hasPrice, 2, "Complète ses prix", "Clique le bouton orange « Compléter » : tes prix de ressources, et ceux des runes ou de revente.")
@@ -508,6 +511,73 @@ function renderPlan(rows) {
   $("#planInfo").textContent = cands.length ? `Calculé parmi ${cands.length} item${cands.length > 1 ? "s" : ""} rentable${cands.length > 1 ? "s" : ""}${all ? ` (dont ${allKnownItems().length} que tu ne suis pas, comptés au coefficient 100 %)` : ""}. Au plus ${maxq} exemplaire${maxq > 1 ? "s" : ""} par item pour ne pas faire chuter le coefficient ou le prix.` : "";
 }
 
+// ----- Aujourd'hui : le cycle Préparer → Décider → Exécuter → Analyser
+function planFor(rows) {
+  const budget = Math.max(0, +(lsGet("budget") || $("#budget").value) || 0), maxq = Math.max(1, Math.min(50, Math.floor(+(lsGet("maxq") || $("#maxq").value) || 1)));
+  const drop = Math.min(50, Math.max(0, +(lsGet("dropPct") || 0))) / 100;
+  const cands = rows.filter(r => r.ok && r.benef > 0).map(r => ({ ...r, cost: r.best.in, brk: r.best.out }));
+  return { budget, ...optimizePlan(cands, budget, maxq, drop) };
+}
+function cycleState() {
+  const st = S.suivi.map(s => ({ s, it: ITEMS.get(s.id), ...statsOf(s) }));
+  const res = neededRes(), runes = neededRunes();
+  const miss = res.filter(([rid]) => priceInfo(rid).v == null).length + runes.filter(([a]) => runePriceInfo(a).v == null).length;
+  const stale = res.filter(([rid]) => +S.prix[rid] > 0 && ageDays(S.maj[rid]) > 7).length + runes.filter(([a]) => +S.rp[a] > 0 && ageDays(S.rm[a]) > 7).length;
+  const plan = planFor(st);
+  const open = S.journal.filter(e => !(+e.encaisse > 0));
+  const toBreak = open.filter(e => stratOf(e.src, e.dest).dest === "brisage" && !(+e.runes > 0));
+  const toSell = open.filter(e => !toBreak.includes(e));
+  const launchedToday = S.journal.filter(e => e.achat === today()).length;
+  const week = weekBen(S);
+  return { st, miss, stale, plan, open, toBreak, toSell, launchedToday, week, hasItems: S.suivi.length > 0 };
+}
+function renderHome() {
+  const c = cycleState(), me = isMe();
+  const steps = [
+    { k: "res", n: 1, t: "Préparer", sub: "Mettre à jour les prix",
+      done: c.hasItems && !c.miss && !c.stale,
+      txt: !c.hasItems ? "Suis d'abord quelques items" : c.miss ? `${c.miss} prix manquant${c.miss > 1 ? "s" : ""}${c.stale ? ` · ${c.stale} à rafraîchir` : ""}` : c.stale ? `${c.stale} prix de plus de 7 jours` : "Tous tes prix sont à jour",
+      cta: !c.hasItems ? ["crafts", "Suivre un item"] : ["res", c.miss || c.stale ? "Mettre à jour" : "Voir les prix"] },
+    { k: "crafts", n: 2, t: "Décider", sub: "Choisir quoi faire",
+      done: c.launchedToday > 0,
+      txt: c.plan.picks.length ? `Plan pour ${kfmt(c.plan.budget)} : <b class="pos">+${fmt(c.plan.ben)}</b> en ${c.plan.picks.length} item${c.plan.picks.length > 1 ? "s" : ""}` : c.hasItems ? "Aucune option rentable chiffrée" : "Rien à proposer pour l'instant",
+      cta: ["crafts", c.launchedToday ? `${c.launchedToday} série${c.launchedToday > 1 ? "s" : ""} lancée${c.launchedToday > 1 ? "s" : ""} aujourd'hui` : "Voir le plan et lancer"] },
+    { k: "jr", n: 3, t: "Exécuter", sub: "Briser, vendre, noter",
+      done: S.journal.length > 0 && !c.open.length,
+      warn: c.open.some(e => ageDays(e.achat) > 7),
+      txt: c.open.length ? `${c.toBreak.length} à briser · ${c.toSell.length} à vendre · ${fmt(c.open.reduce((a, e) => a + (+e.cout || 0), 0))} immobilisés` : S.journal.length ? "Rien en cours" : "Aucune série pour l'instant",
+      cta: ["jr", c.open.length ? "Traiter mes séries" : "Voir mes séries"] },
+    { k: "dash", n: 4, t: "Analyser", sub: "Voir ce que j'ai gagné",
+      done: lsGet("lastDash") === today(),
+      txt: `Cette semaine : <b class="${c.week < 0 ? "neg" : c.week > 0 ? "pos" : ""}">${c.week > 0 ? "+" : ""}${fmt(c.week)}</b>`,
+      cta: ["dash", "Voir les résultats"] }
+  ];
+  const next = steps.find(x => !x.done && (x.k !== "dash" || S.journal.length)) || steps[3];
+  $("#cycle").innerHTML = steps.map(x => `<button type="button" class="cstep ${x.done ? "done" : ""} ${x === next ? "now" : ""} ${x.warn ? "warn" : ""}" data-goto="${x.cta[0]}">
+      <span class="cs-h"><span class="cs-n">${x.done ? "✓" : x.n}</span><span><b>${x.t}</b><small>${x.sub}</small></span></span>
+      <span class="cs-t">${x.txt}</span><span class="cs-c">${x.cta[1]} →</span></button>`).join("");
+  const nextTxt = {
+    res: !c.hasItems ? "Commence par suivre les items que tu crafts ou brises." : `Mets à jour ${c.miss ? `les ${c.miss} prix manquants` : `les ${c.stale} prix anciens`} : tout le reste en dépend.`,
+    crafts: c.plan.picks.length ? `Le meilleur plan du jour rapporte ${fmt(c.plan.ben)} : ${c.plan.picks.slice(0, 2).map(p => `${p.q} × ${p.it.n}`).join(", ")}${c.plan.picks.length > 2 ? "…" : ""}.` : "Complète les prix de tes items pour voir ce qui est rentable.",
+    jr: `${c.toBreak.length ? `${c.toBreak.length} série${c.toBreak.length > 1 ? "s" : ""} à briser` : ""}${c.toBreak.length && c.toSell.length ? " et " : ""}${c.toSell.length ? `${c.toSell.length} à vendre` : ""} : marque-les au fur et à mesure.`,
+    dash: "Ta journée est à jour. Jette un œil à tes résultats et à ceux du groupe."
+  }[next.k];
+  $("#nextAction").innerHTML = `<span class="na-l">Prochaine étape</span><span class="na-t">${esc(nextTxt)}</span><button class="primary" type="button" data-goto="${next.cta[0]}">${next.cta[1]}</button>`;
+  // à traiter
+  const todo = [...c.open].sort((a, b) => (a.achat || "").localeCompare(b.achat || ""));
+  $("#homeTodo").innerHTML = todo.length ? todo.slice(0, 12).map(e => {
+    const sg = stratOf(e.src, e.dest), brk = c.toBreak.includes(e), age = ageDays(e.achat);
+    return `<tr><td class="l"><b>${e.qte || 1} × ${esc(e.nom)}</b><small class="strat">${stratTxt(sg)} · lancé ${age === 0 ? "aujourd'hui" : age === 1 ? "hier" : `il y a ${age} jours`}${age > 7 ? ' <span class="miss-t">· capital qui dort</span>' : ""}</small></td>
+      <td class="m">${fmt(+e.cout || 0)}</td>
+      <td class="l"><span class="status ${brk ? "s-run" : "s-brk"}">${brk ? "À briser" : "À vendre"}</span></td>
+      <td class="acts">${me ? `<button class="quick" data-hquick="${brk ? "brise" : "vendu"}" data-jid="${e._id}">${brk ? "Brisé" : "Vendu"}</button>` : ""}</td></tr>`;
+  }).join("") : `<tr><td class="empty">${S.journal.length ? "Rien en cours. Lance une série depuis le plan." : "Aucune série. Une fois tes prix renseignés, lance ta première série depuis Opportunités."}</td></tr>`;
+  // opportunités
+  const best = c.st.filter(r => r.ok && r.benef > 0).sort((a, b) => b.benef - a.benef).slice(0, 5);
+  $("#homeOpp").innerHTML = best.length ? best.map(r => `<li><span><b>${esc(r.it?.n || r.s.id)}</b><small class="strat">${stratTxt(r.best)} · ${pillTxt(r.roi)}</small></span><span class="ho-r"><b class="mono pos">+${fmt(r.benef)}</b>${me ? `<button class="ghost" data-launch-h="${r.s.id}" type="button">Lancer</button>` : ""}</span></li>`).join("")
+    : `<li><span class="note">Aucune opportunité chiffrée pour l'instant.</span></li>`;
+}
+
 // ----- Prix du marché
 let mkSeg = lsGet("mkSeg") || "res";
 // « Seulement les prix à compléter » : la liste est figée au moment où on l'ouvre,
@@ -541,7 +611,10 @@ function renderRes() {
   $("#mkNres").textContent = resMiss ? resMiss : ""; $("#mkNrunes").textContent = runeMiss ? runeMiss : ""; $("#mkNitems").textContent = itemMiss ? itemMiss : "";
   $("#cRunes").textContent = allRunes.length;
 
-  if (!missSnap) missSnap = new Set([...allRes.filter(x => x.pi.v == null).map(x => "r" + x.rid), ...allRunes.filter(x => x.pi.v == null).map(x => "u" + x.a), ...items.filter(x => !x.st.best).map(x => "i" + x.s.id)]);
+  const staleR = x => x.pi.v == null || (x.pi.src === "moi" && ageDays(S.maj[x.rid]) > 7);
+  const staleU = x => x.pi.v == null || (x.pi.src === "moi" && ageDays(S.rm[x.a]) > 7);
+  const staleI = x => !x.st.best || (+x.s.pa > 0 && ageDays(x.s.ma) > 7) || (+x.s.pv > 0 && ageDays(x.s.mv) > 7);
+  if (!missSnap) missSnap = new Set([...allRes.filter(staleR).map(x => "r" + x.rid), ...allRunes.filter(staleU).map(x => "u" + x.a), ...items.filter(staleI).map(x => "i" + x.s.id)]);
   const keepRow = (name, key) => (!f || norm(name).includes(f)) && (!onlyMiss || missSnap.has(key));
   const runes = stableOrder("runes", allRunes.filter(x => keepRow(x.st[0], "u" + x.a)), x => x.a, (x, y) => ((x.pi.v != null) - (y.pi.v != null)) || x.st[0].localeCompare(y.st[0], "fr"));
   const list = stableOrder("res", allRes.filter(x => keepRow(x.n, "r" + x.rid)), x => x.rid, (a, b) => ((a.pi.v != null) - (b.pi.v != null)) || a.n.localeCompare(b.n, "fr"));
@@ -1051,7 +1124,7 @@ document.addEventListener("keydown", e => {
   if (el.matches?.("input,select,textarea") || e.ctrlKey || e.metaKey || e.altKey) return;
   if (!$("#app") || $("#app").hidden) return;
   const k = e.key;
-  if (["1", "2", "3", "4", "5"].includes(k)) { setTab(["dash", "grp", "crafts", "res", "jr"][+k - 1]); e.preventDefault(); }
+  if (["0", "1", "2", "3", "4", "5"].includes(k)) { setTab(["home", "res", "crafts", "jr", "dash", "grp"][+k]); e.preventDefault(); }
   else if (k === "/") { e.preventDefault(); if (!isMe()) setView(ME); setTab("crafts"); $("#q").focus(); }
   else if (k === "n" || k === "N") { e.preventDefault(); if (!isMe()) setView(ME); setTab("jr"); $("#jItem").focus(); }
   else if (k === "?") { e.preventDefault(); $("#helpPanel").hidden = false; }
@@ -1065,6 +1138,11 @@ document.querySelectorAll("[data-jf]").forEach(b => b.addEventListener("click", 
 $("#mkItem").addEventListener("change", () => { missDirty(); renderRes(); applyRO(); });
 $("#mkMissing").addEventListener("change", () => { missDirty(); renderRes(); applyRO(); });
 $("#startHide").addEventListener("click", () => { lsSet("startHidden", "1"); $("#startCard").hidden = true; });
+$("#v-home").addEventListener("click", e => {
+  const g = e.target.closest("[data-goto]"); if (g) { const t = g.dataset.goto; if (t === "res") { missDirty(); $("#mkMissing").checked = true; } setTab(t); window.scrollTo({ top: 0 }); return; }
+  const q = e.target.closest("[data-hquick]"); if (q && isMe()) { quickJr(q.dataset.jid, q.dataset.hquick); render(); return; }
+  const l = e.target.closest("[data-launch-h]"); if (l && isMe()) { quickSerie(+l.dataset.launchH); return; }
+});
 $("#planAll").addEventListener("change", e => { lsSet("planAll", e.target.checked ? "1" : ""); renderCrafts(); applyRO(); });
 ["budget", "maxq", "dropPct"].forEach(k => { const v = lsGet(k); if (v) $("#" + k).value = v; });
 if (lsGet("planAll")) $("#planAll").checked = true;

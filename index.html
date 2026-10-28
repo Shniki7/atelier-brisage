@@ -23,6 +23,7 @@
   <symbol id="i-moon" viewBox="0 0 24 24"><path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"/></symbol>
   <symbol id="i-out" viewBox="0 0 24 24"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4M16 17l5-5-5-5M21 12H9"/></symbol>
   <symbol id="i-eye" viewBox="0 0 24 24"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12z"/><circle cx="12" cy="12" r="3"/></symbol>
+  <symbol id="i-home" viewBox="0 0 24 24"><path d="M3 10.5 12 3l9 7.5V20a1 1 0 0 1-1 1h-5v-6h-6v6H4a1 1 0 0 1-1-1z"/></symbol>
   <symbol id="i-plus" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></symbol>
   <symbol id="i-key" viewBox="0 0 24 24"><rect x="2" y="6" width="20" height="12" rx="2"/><path d="M6 10h.01M10 10h.01M14 10h.01M18 10h.01M7 14h10"/></symbol>
 </svg>
@@ -82,11 +83,12 @@
     <div>
       <div class="nav-l">Menu</div>
       <nav class="nav" role="tablist" aria-label="Sections">
-        <button role="tab" aria-selected="true" data-tab="dash"><svg class="i"><use href="#i-dash"/></svg><span class="lab">Tableau de bord</span></button>
+        <button role="tab" aria-selected="true" data-tab="home"><svg class="i"><use href="#i-home"/></svg><span class="lab">Aujourd'hui</span></button>
+        <button role="tab" aria-selected="false" data-tab="res"><svg class="i"><use href="#i-res"/></svg><span class="lab"><i class="stepno">1</i>Prix du marché</span><span class="count" id="cRes">0</span></button>
+        <button role="tab" aria-selected="false" data-tab="crafts"><svg class="i"><use href="#i-craft"/></svg><span class="lab"><i class="stepno">2</i>Opportunités</span><span class="count" id="cCrafts">0</span></button>
+        <button role="tab" aria-selected="false" data-tab="jr"><svg class="i"><use href="#i-jr"/></svg><span class="lab"><i class="stepno">3</i>Mes séries</span><span class="count" id="cJr">0</span></button>
+        <button role="tab" aria-selected="false" data-tab="dash"><svg class="i"><use href="#i-dash"/></svg><span class="lab"><i class="stepno">4</i>Résultats</span></button>
         <button role="tab" aria-selected="false" data-tab="grp"><svg class="i"><use href="#i-grp"/></svg><span class="lab">Le groupe</span><span class="count" id="cGrp">0</span></button>
-        <button role="tab" aria-selected="false" data-tab="crafts"><svg class="i"><use href="#i-craft"/></svg><span class="lab">Opportunités</span><span class="count" id="cCrafts">0</span></button>
-        <button role="tab" aria-selected="false" data-tab="res"><svg class="i"><use href="#i-res"/></svg><span class="lab">Prix du marché</span><span class="count" id="cRes">0</span></button>
-        <button role="tab" aria-selected="false" data-tab="jr"><svg class="i"><use href="#i-jr"/></svg><span class="lab">Mes séries</span><span class="count" id="cJr">0</span></button>
       </nav>
     </div>
     <div class="grp-block">
@@ -112,6 +114,22 @@
 
     <div class="content">
       <div id="loading" class="loading">Chargement…</div>
+
+      <!-- AUJOURD'HUI -->
+      <section id="v-home" class="stack" hidden>
+        <div class="cycle" id="cycle"></div>
+        <div class="next" id="nextAction"></div>
+        <div class="dgrid">
+          <div class="panel span2">
+            <div class="panel-head"><h2>À traiter</h2><span class="sub">Tes séries en cours, de la plus ancienne à la plus récente</span></div>
+            <div class="tbl-wrap"><table class="t-todo"><tbody id="homeTodo"></tbody></table></div>
+          </div>
+          <div class="panel">
+            <div class="panel-head"><h2>Meilleures opportunités</h2></div>
+            <ul class="kv home-opp" id="homeOpp"></ul>
+          </div>
+        </div>
+      </section>
 
       <!-- TABLEAU DE BORD -->
       <section id="v-dash" class="stack" hidden>
@@ -245,7 +263,7 @@
           </div>
           <div class="mk-filters">
             <select id="mkItem" class="keep" aria-label="Limiter à un item"><option value="">Tous mes items</option></select>
-            <label class="chk"><input type="checkbox" id="mkMissing" class="keep"><span>Seulement les prix à compléter</span></label>
+            <label class="chk"><input type="checkbox" id="mkMissing" class="keep"><span>Seulement les prix manquants ou de plus de 7 jours</span></label>
             <input id="rq" class="keep" type="search" placeholder="Filtrer" aria-label="Filtrer par nom" style="width:180px">
           </div>
         </div>
@@ -372,7 +390,7 @@
       <div><kbd>Maj</kbd> + <kbd>Tab</kbd></div><div>Case précédente dans la même colonne</div>
       <div><kbd>↑</kbd> <kbd>↓</kbd></div><div>Monter ou descendre dans une colonne de nombres</div>
       <div class="kh">Partout</div>
-      <div><kbd>1</kbd> à <kbd>5</kbd></div><div>Tableau de bord, Groupe, Crafts, Ressources, Journal</div>
+      <div><kbd>0</kbd> à <kbd>5</kbd></div><div>Aujourd'hui, Prix du marché, Opportunités, Mes séries, Résultats, Groupe</div>
       <div><kbd>/</kbd></div><div>Chercher un item à suivre</div>
       <div><kbd>N</kbd></div><div>Nouvelle série dans le journal</div>
       <div><kbd>B</kbd> / <kbd>V</kbd></div><div>Journal : marquer la ligne sélectionnée Brisé / Vendu</div>

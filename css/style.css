@@ -436,6 +436,36 @@ button.ghost:disabled:hover{background:transparent}
 .steps-card b{display:block}
 .steps-card small{display:block;color:var(--muted);font-size:12.5px;margin-top:2px}
 
+/* ---------- Aujourd'hui ---------- */
+.cycle{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px;counter-reset:s}
+@media (max-width:1100px){.cycle{grid-template-columns:repeat(2,minmax(0,1fr))}}
+@media (max-width:560px){.cycle{grid-template-columns:1fr}}
+.cstep{display:grid;gap:10px;align-content:start;text-align:left;background:var(--surface);border:1px solid var(--line);border-radius:var(--r);padding:16px;box-shadow:var(--shadow);position:relative;font-weight:400}
+.cstep:hover{border-color:var(--accent);background:var(--surface)}
+.cstep:not(:last-child)::after{content:"";position:absolute;right:-12px;top:30px;width:12px;height:2px;background:var(--line-2)}
+@media (max-width:1100px){.cstep::after{display:none}}
+.cs-h{display:flex;gap:10px;align-items:center}
+.cs-h b{display:block;font-family:var(--display);font-size:15px}
+.cs-h small{display:block;color:var(--muted);font-size:12px}
+.cs-n{width:30px;height:30px;border-radius:50%;display:grid;place-items:center;background:var(--surface-2);color:var(--muted);font-weight:700;flex:none}
+.cs-t{font-size:13px;color:var(--fg-2);min-height:2.6em}
+.cs-c{font-size:12.5px;font-weight:600;color:var(--accent)}
+.cstep.done .cs-n{background:var(--good);color:#fff}
+.cstep.done{opacity:.85}
+.cstep.now{border:2px solid var(--accent);padding:15px;box-shadow:0 0 0 4px var(--accent-soft)}
+.cstep.now .cs-n{background:var(--accent);color:var(--on-accent)}
+.cstep.warn:not(.done) .cs-n{background:var(--warn);color:#fff}
+.next{display:flex;flex-wrap:wrap;gap:10px 16px;align-items:center;background:var(--accent-soft);border-radius:var(--r);padding:14px 16px}
+.na-l{font-size:11px;text-transform:uppercase;letter-spacing:.08em;font-weight:700;color:var(--accent)}
+.na-t{flex:1;min-width:220px;font-size:14px;color:var(--fg)}
+.t-todo{min-width:520px}
+.t-todo td{padding:10px 8px}
+.home-opp li{align-items:center}
+.home-opp li>span:first-child{min-width:0}
+.ho-r{display:flex;align-items:center;gap:6px;white-space:nowrap}
+.stepno{font-style:normal;font-family:var(--mono);font-size:10.5px;color:var(--side-muted);border:1px solid var(--side-line);border-radius:4px;padding:0 4px;margin-right:7px}
+.nav button[aria-selected="true"] .stepno{color:var(--side-fg)}
+
 /* ---------- lecture seule ---------- */
 body.ro .own-only{display:none!important}
 
