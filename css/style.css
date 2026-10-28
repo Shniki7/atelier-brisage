@@ -417,6 +417,25 @@ body.adv-on p.adv,body.adv-on small.adv{display:block}
 button:disabled{opacity:.4;cursor:not-allowed}
 button.ghost:disabled:hover{background:transparent}
 
+.lform{display:grid;gap:14px}
+.l-item b{display:block;font-family:var(--display);font-size:17px}
+.l-item small{color:var(--muted)}
+.l-item{margin:0}
+.l-row{display:grid;grid-template-columns:90px 1fr 1fr;gap:10px}
+.l-row select,.l-row input,.lform input{width:100%}
+.l-sum{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px}
+.l-sum .tot b{font-size:15px}
+.l-actions{display:flex;justify-content:flex-end;gap:8px}
+@media (max-width:520px){.l-row,.l-sum{grid-template-columns:1fr}}
+.start{border-color:color-mix(in srgb,var(--accent) 40%,var(--line));background:linear-gradient(140deg,var(--accent-soft),var(--surface) 60%)}
+.steps-card{list-style:none;margin:0;padding:0;display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:12px}
+.steps-card li{display:flex;gap:10px;align-items:flex-start}
+.steps-card .n{width:26px;height:26px;border-radius:50%;display:grid;place-items:center;background:var(--accent);color:var(--on-accent);font-weight:700;font-size:13px;flex:none}
+.steps-card li.ok .n{background:var(--good)}
+.steps-card li.ok b{text-decoration:line-through;color:var(--muted)}
+.steps-card b{display:block}
+.steps-card small{display:block;color:var(--muted);font-size:12.5px;margin-top:2px}
+
 /* ---------- lecture seule ---------- */
 body.ro .own-only{display:none!important}
 

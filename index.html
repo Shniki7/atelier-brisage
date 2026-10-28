@@ -190,6 +190,10 @@
 
       <!-- OPPORTUNITÉS -->
       <section id="v-crafts" class="stack" hidden>
+        <div class="panel start" id="startCard" hidden>
+          <div class="panel-head"><h2>Pour démarrer</h2><button class="ghost" type="button" id="startHide">Masquer</button></div>
+          <ol class="steps-card" id="startSteps"></ol>
+        </div>
         <div class="panel plan">
           <div class="panel-head"><h2>Que faire avec mon budget ?</h2><span class="sub">La combinaison qui rapporte le plus</span></div>
           <div class="plan-ctl">
@@ -339,6 +343,23 @@
     <button type="button" id="btnExport"><svg class="i"><use href="#i-data"/></svg>Exporter une sauvegarde (.json)</button>
     <button type="button" id="btnStarter">Ajouter mes 13 items de départ</button>
     <div class="file"><span class="lbl">Importer un fichier</span><input type="file" id="fileImport" accept=".json,application/json"></div>
+  </div>
+</div>
+
+<div class="modal" id="launchPanel" hidden>
+  <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="lT">
+    <div class="panel-head"><h2 id="lT">Lancer une série</h2><button class="ghost x" type="button" data-close aria-label="Fermer">×</button></div>
+    <form id="lForm" class="lform" novalidate>
+      <p class="l-item" id="lItem"></p>
+      <div class="l-row">
+        <div class="field"><label for="lQty">Combien ?</label><input id="lQty" class="num" type="number" min="1" value="1"></div>
+        <div class="field"><label for="lSrc">Je les obtiens en</label><select id="lSrc"><option value="craft">Craftant</option><option value="achat">Achetant</option></select></div>
+        <div class="field"><label for="lDest">Puis je les</label><select id="lDest"><option value="brisage">Brise</option><option value="revente">Revends</option></select></div>
+      </div>
+      <div class="l-sum" id="lSum"></div>
+      <div class="field"><label for="lCost">Coût total réel (corrige si tu as payé autre chose)</label><input id="lCost" class="num" type="number" min="0"></div>
+      <div class="l-actions"><button type="button" class="ghost" data-close>Annuler</button><button class="primary" type="submit">C'est parti</button></div>
+    </form>
   </div>
 </div>
 

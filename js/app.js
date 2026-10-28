@@ -382,7 +382,16 @@ function realOf(itemId, M = S) {
   return { n: L.length, roi: inv ? (rn - inv) / inv : null, ben: rn - inv };
 }
 let oppSort = lsGet("oppSort") || "benef";
+function renderStart() {
+  const st = S.suivi.map(s => statsOf(s)), hasItem = S.suivi.length > 0, hasPrice = st.some(x => x.best), hasSerie = S.journal.length > 0;
+  const el = $("#startCard"); el.hidden = !isMe() || (hasItem && hasPrice && hasSerie) || lsGet("startHidden") === "1";
+  const step = (ok, n, t, d) => `<li class="${ok ? "ok" : ""}"><span class="n">${ok ? "✓" : n}</span><span><b>${t}</b><small>${d}</small></span></li>`;
+  $("#startSteps").innerHTML = step(hasItem, 1, "Suis un item", "Tape son nom dans « Mes items », ex. Bottes de la Reine des Voleurs.")
+    + step(hasPrice, 2, "Complète ses prix", "Clique le bouton orange « Compléter » : tes prix de ressources, et ceux des runes ou de revente.")
+    + step(hasSerie, 3, "Lance une série", "Clique « Lancer », indique combien tu en fais (ex. 5) et valide. Puis Brisé / Vendu dans Mes séries.");
+}
 function renderCrafts() {
+  renderStart();
   const cmp = oppSort === "roi" ? (a, b) => (b.roi ?? -1e9) - (a.roi ?? -1e9) : (a, b) => (b.benef ?? -1e18) - (a.benef ?? -1e18);
   const rows = stableOrder("crafts", S.suivi.map(s => ({ s, it: ITEMS.get(s.id), ...statsOf(s) })), r => r.s.id, cmp);
   keepFocus(() => {
@@ -400,7 +409,7 @@ function renderCrafts() {
         <td class="m ${r.benef < 0 ? "neg" : r.benef > 0 ? "pos" : ""}"><b>${r.best ? (r.benef > 0 ? "+" : "") + fmt(r.benef) : "–"}</b></td>
         <td>${r.best ? `<span class="pill ${pillCls(r.roi)}">${pillTxt(r.roi)}</span>` : ""}</td>
         <td class="l">${dots(rel)}</td>
-        <td class="acts"><button class="ghost own-only" data-serie="${r.s.id}" title="Enregistrer une série avec le meilleur choix" ${r.best ? "" : "disabled"}>Lancer</button><button class="ghost x own-only" data-del="${r.s.id}" title="Ne plus suivre" aria-label="Ne plus suivre ${esc(nm)}">×</button></td></tr>`;
+        <td class="acts"><button class="ghost own-only" data-serie="${r.s.id}" title="Enregistrer une série : combien, et de quelle façon">Lancer</button><button class="ghost x own-only" data-del="${r.s.id}" title="Ne plus suivre" aria-label="Ne plus suivre ${esc(nm)}">×</button></td></tr>`;
       if (isOpen) html += `<tr class="detail"><td colspan="8">${oppDetail(r, rel)}</td></tr>`;
       return html;
     }).join("") : `<tr><td colspan="8" class="empty">${isMe() ? "Aucun item suivi. Cherche un item ci-dessus pour le suivre (raccourci : /)." : "Ce membre ne suit encore aucun item."}</td></tr>`;
@@ -490,7 +499,7 @@ function renderPlan(rows) {
   $("#plan").innerHTML = picks.length ? picks.map(p => `<tr>
       <td class="l"><b>${esc(p.it.n)}</b>${p.untracked ? ` <span class="grp-tag">non suivi</span>` : ""}</td>
       <td class="l">${stratTxt(p.best)}</td><td class="m"><b>${p.q}</b></td><td class="m">${fmt(p.q * p.cost)}</td><td class="m pos"><b>+${fmt(p.gain)}</b></td>
-      <td class="acts">${p.untracked ? `<button class="ghost own-only follow" data-follow="${p.it.id}" type="button">Suivre</button>` : ""}</td></tr>`).join("")
+      <td class="acts"><button class="ghost own-only" data-launch="${p.it.id}" data-q="${p.q}" type="button" title="Enregistrer cette série">Lancer</button>${p.untracked ? `<button class="ghost own-only follow" data-follow="${p.it.id}" type="button">Suivre</button>` : ""}</td></tr>`).join("")
     : `<tr><td colspan="6" class="empty">${cands.length ? `Ton budget (${fmt(budget)}) ne suffit pas : l'option rentable la moins chère coûte ${fmt(Math.min(...cands.map(c => c.cost)))}.` : S.suivi.length ? "Aucune option rentable pour l'instant : complète les prix de tes items (bouton « Compléter » ci-dessous)." : "Suis quelques items ci-dessous, puis renseigne leurs prix."}</td></tr>`;
   $("#tInv").textContent = fmt(inv); $("#tBen").textContent = (ben > 0 ? "+" : "") + fmt(ben); $("#tLeft").textContent = fmt(budget - inv);
   $("#tRoi").textContent = inv ? pillTxt(ben / inv) : "–";
@@ -971,13 +980,36 @@ async function importData(d) {
 }
 
 // ---------------------------------------------------------------- saisie rapide
-function quickSerie(id) {
-  if (!isMe()) return; const s = S.suivi.find(x => x.id === id); const it = ITEMS.get(id); if (!s || !it) return;
+// « Lancer » : fenêtre pour dire « aujourd'hui je fais N exemplaires de cet item, de cette façon »
+let launchId = null;
+function quickSerie(id, qty) {
+  if (!isMe()) return; const s = S.suivi.find(x => x.id === id) || { id, coef: 100, brk: 0 }; const it = ITEMS.get(id); if (!it) return;
   const st = statsOf(s), b = st.best || stratOf("craft", "brisage");
-  const cout = b.src === "achat" ? (+s.pa || 0) : (st.miss ? 0 : Math.round(st.cost));
-  Store.addJr({ item: id, nom: it.n, qte: 1, cout, achat: today(), brisage: "", runes: 0, vente: "", encaisse: 0, src: b.src, dest: b.dest });
-  toast(cout ? `Série de ${it.n} ajoutée au journal : ${b.label} (${fmt(cout)})` : `Série de ${it.n} ajoutée : complète son coût dans le journal`);
+  launchId = id; $("#lItem").innerHTML = `<b>${esc(it.n)}</b><small>Niv. ${it.l} · ${esc(D.types[it.t] || "")}</small>`;
+  $("#lQty").value = qty || 1; $("#lSrc").value = b.src; $("#lDest").value = b.dest; delete $("#lCost").dataset.touched;
+  launchCalc(); $("#launchPanel").hidden = false; $("#lQty").focus(); $("#lQty").select();
 }
+function launchCalc() {
+  const id = launchId, s = S.suivi.find(x => x.id === id) || { id, coef: 100, brk: 0 }, st = statsOf(s);
+  const q = Math.max(1, Math.round(+$("#lQty").value || 1)), o = st.opts.find(x => x.src === $("#lSrc").value && x.dest === $("#lDest").value);
+  if (!$("#lCost").dataset.touched) $("#lCost").value = o.in != null ? Math.round(o.in * q) : "";
+  const cost = +$("#lCost").value || 0, back = o.out != null ? o.out * q : null;
+  $("#lSum").innerHTML = `<div class="tot"><span>Tu paies</span><b>${cost ? fmt(cost) : "?"}</b>${o.in == null ? `<small class="note">${o.src === "achat" ? "prix d'achat inconnu" : "prix de ressources manquants"}</small>` : ""}</div>
+    <div class="tot"><span>Tu devrais récupérer</span><b>${back != null ? fmt(back) : "?"}</b>${o.out == null ? `<small class="note">${o.dest === "revente" ? "prix de revente inconnu" : "prix des runes manquants"}</small>` : ""}</div>
+    <div class="tot big"><span>Bénéfice attendu</span><b>${back != null && cost ? (back - cost > 0 ? "+" : "") + fmt(back - cost) : "?"}</b></div>
+    ${st.best && st.best.k !== o.k ? `<p class="note" style="grid-column:1/-1">Le meilleur choix pour cet item est « ${stratTxt(st.best)} ».</p>` : ""}`;
+}
+["lQty", "lSrc", "lDest"].forEach(k => $("#" + k).addEventListener("input", launchCalc));
+["lSrc", "lDest"].forEach(k => $("#" + k).addEventListener("change", () => { delete $("#lCost").dataset.touched; launchCalc(); }));
+$("#lCost").addEventListener("input", () => { $("#lCost").dataset.touched = "1"; launchCalc(); });
+$("#launchPanel").addEventListener("click", e => { if (e.target.id === "launchPanel" || e.target.closest("[data-close]")) $("#launchPanel").hidden = true; });
+$("#lForm").addEventListener("submit", e => {
+  e.preventDefault(); const id = launchId, it = ITEMS.get(id); const q = Math.max(1, Math.round(+$("#lQty").value || 1)); const cout = Math.round(+$("#lCost").value || 0);
+  if (!S.suivi.some(x => x.id === id)) { S.suivi.push({ id, brk: 0 }); Store.saveSuivi(); }
+  Store.addJr({ item: id, nom: it.n, qte: q, cout, achat: today(), brisage: "", runes: 0, vente: "", encaisse: 0, src: $("#lSrc").value, dest: $("#lDest").value });
+  $("#launchPanel").hidden = true;
+  toast(`${q} × ${it.n} lancé${q > 1 ? "s" : ""} : à retrouver dans Mes séries`);
+});
 function quickJr(jid, kind) {
   const e = S.journal.find(j => j._id === jid); if (!e) return;
   if (kind === "brise") {
@@ -1032,10 +1064,12 @@ document.querySelectorAll("[data-mk]").forEach(b => b.addEventListener("click", 
 document.querySelectorAll("[data-jf]").forEach(b => b.addEventListener("click", () => { jFilter = b.dataset.jf; lsSet("jFilter", jFilter); renderJr(); applyRO(); }));
 $("#mkItem").addEventListener("change", () => { missDirty(); renderRes(); applyRO(); });
 $("#mkMissing").addEventListener("change", () => { missDirty(); renderRes(); applyRO(); });
+$("#startHide").addEventListener("click", () => { lsSet("startHidden", "1"); $("#startCard").hidden = true; });
 $("#planAll").addEventListener("change", e => { lsSet("planAll", e.target.checked ? "1" : ""); renderCrafts(); applyRO(); });
 ["budget", "maxq", "dropPct"].forEach(k => { const v = lsGet(k); if (v) $("#" + k).value = v; });
 if (lsGet("planAll")) $("#planAll").checked = true;
 $("#plan").addEventListener("click", e => {
+  const l = e.target.closest("[data-launch]"); if (l) { quickSerie(+l.dataset.launch, +l.dataset.q); return; }
   const f = e.target.closest("[data-follow]"); if (!f || !isMe()) return;
   const id = +f.dataset.follow; if (S.suivi.some(x => x.id === id)) return;
   S.suivi.push({ id, brk: 0 }); Store.saveSuivi(); render(); toast(`${ITEMS.get(id).n} ajouté aux crafts suivis`);
@@ -1061,7 +1095,7 @@ function applyTheme() {
 $("#btnTheme").addEventListener("click", () => { theme = THEMES[(THEMES.indexOf(theme) + 1) % 3]; lsSet("theme", theme); applyTheme(); toast("Thème : " + THEME_LAB[theme].toLowerCase()); });
 $("#themeLab").textContent = THEME_LAB[theme];
 $("#dataPanel").addEventListener("click", e => { if (e.target.id === "dataPanel") $("#dataPanel").hidden = true; });
-document.addEventListener("keydown", e => { if (e.key === "Escape") $("#dataPanel").hidden = true; });
+document.addEventListener("keydown", e => { if (e.key === "Escape") { $("#dataPanel").hidden = true; $("#launchPanel").hidden = true; } });
 $("#btnStarter").addEventListener("click", async () => {
   try { const d = await (await fetch("data/depart-tanguy.json")).json(); await importData(d); $("#dataPanel").hidden = true; }
   catch (x) { console.error(x); toast("Impossible de charger les items de départ"); }
