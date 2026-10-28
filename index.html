@@ -26,6 +26,7 @@
   <symbol id="i-home" viewBox="0 0 24 24"><path d="M3 10.5 12 3l9 7.5V20a1 1 0 0 1-1 1h-5v-6h-6v6H4a1 1 0 0 1-1-1z"/></symbol>
   <symbol id="i-paw" viewBox="0 0 24 24"><circle cx="5.5" cy="10" r="2"/><circle cx="9.5" cy="5.5" r="2"/><circle cx="14.5" cy="5.5" r="2"/><circle cx="18.5" cy="10" r="2"/><path d="M12 11c-3 0-6 4.5-6 7a2.5 2.5 0 0 0 3 2.4c1-.2 2-.6 3-.6s2 .4 3 .6A2.5 2.5 0 0 0 18 18c0-2.5-3-7-6-7z"/></symbol>
   <symbol id="i-book" viewBox="0 0 24 24"><path d="M3 5a2 2 0 0 1 2-2h5v18H5a2 2 0 0 1-2-2zM14 3h5a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-5z"/><path d="M6 7h2M6 11h2M17 7h1M17 11h1"/></symbol>
+  <symbol id="i-calc" viewBox="0 0 24 24"><rect x="4" y="2" width="16" height="20" rx="2"/><path d="M8 6h8M8 11h.01M12 11h.01M16 11h.01M8 15h.01M12 15h.01M16 15v4M8 19h4"/></symbol>
   <symbol id="i-plus" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></symbol>
   <symbol id="i-key" viewBox="0 0 24 24"><rect x="2" y="6" width="20" height="12" rx="2"/><path d="M6 10h.01M10 10h.01M14 10h.01M18 10h.01M7 14h10"/></symbol>
 </svg>
@@ -85,6 +86,7 @@
     <div>
       <div class="nav-l">Menu</div>
       <nav class="nav" role="tablist" aria-label="Sections">
+        <button role="tab" aria-selected="false" data-tab="calc"><svg class="i"><use href="#i-calc"/></svg><span class="lab">Calculer un craft</span></button>
         <button role="tab" aria-selected="true" data-tab="home"><svg class="i"><use href="#i-home"/></svg><span class="lab">Mes kamas</span></button>
         <button role="tab" aria-selected="false" data-tab="res"><svg class="i"><use href="#i-res"/></svg><span class="lab">Prix du marché</span><span class="count" id="cRes">0</span></button>
         <button role="tab" aria-selected="false" data-tab="cat"><svg class="i"><use href="#i-book"/></svg><span class="lab">Catalogue</span></button>
@@ -121,6 +123,44 @@
       <div id="loading" class="loading">Chargement…</div>
 
       <!-- AUJOURD'HUI -->
+      <!-- CALCULER UN CRAFT : 0 mes kamas → 1-2 prix HDV des ressources → 3 combien et quel bénéfice -->
+      <section id="v-calc" class="stack calc" hidden>
+        <div class="panel cstep2">
+          <h2><span class="fn">1</span>Mes kamas</h2>
+          <div class="row" style="gap:16px;align-items:flex-end;flex-wrap:wrap">
+            <div class="field"><label for="cBud">Kamas que j'ai pour crafter</label><input id="cBud" class="num keep" type="text" inputmode="decimal" autocomplete="off" placeholder="ex. 5m"></div>
+            <p class="note" id="cBudNote" style="margin:0 0 8px"></p>
+          </div>
+        </div>
+        <div class="panel cstep2">
+          <h2><span class="fn">2</span>L'item que je regarde</h2>
+          <div class="search own-only" style="max-width:none"><input id="cSearch" type="search" placeholder="Nom de l'item, ex. Aprybou" autocomplete="off" aria-label="Chercher l'item à calculer"><ul class="results" id="cResults" hidden></ul></div>
+          <div id="cItem"></div>
+        </div>
+        <div class="panel cstep2" id="cIngP" hidden>
+          <h2><span class="fn">3</span>Prix des ressources en HDV</h2>
+          <p class="note" style="margin:0">Tape le prix que tu vois en HDV, et choisis s'il est pour 1, 10, 100 ou 1 000 unités. Les prix sont gardés pour la prochaine fois.</p>
+          <div class="tbl-wrap"><table class="t-calc"><thead><tr><th class="l">Ressource</th><th>Pour 1 craft</th><th>Prix HDV</th><th class="l">pour</th><th>Coût pour 1 craft</th></tr></thead><tbody id="cIng"></tbody></table></div>
+        </div>
+        <div class="panel cstep2" id="cSellP" hidden>
+          <h2><span class="fn">4</span>Prix de vente en HDV</h2>
+          <div class="row" style="gap:16px;align-items:flex-end;flex-wrap:wrap">
+            <div class="field"><label for="cPv">Prix d'un item en HDV</label><input id="cPv" class="num" type="text" inputmode="decimal" autocomplete="off" placeholder="ex. 1m"></div>
+            <p class="note" id="cPvNote" style="margin:0 0 8px"></p>
+          </div>
+        </div>
+        <div class="panel cstep2 cres" id="cResP" hidden>
+          <h2><span class="fn">5</span>Combien j'en crafte, et ce que je gagne</h2>
+          <div class="cgrid" id="cSum"></div>
+          <div class="row cgo" style="gap:12px;align-items:flex-end;flex-wrap:wrap">
+            <div class="field"><label for="cQ">J'en crafte</label><input id="cQ" class="num" type="number" min="1" value="1" style="width:110px"></div>
+            <div class="tot big"><span>Bénéfice total</span><b id="cBen">–</b></div>
+            <button class="primary own-only" type="button" id="cGo">C'est parti : je lance</button>
+          </div>
+          <p class="note" id="cGoNote"></p>
+        </div>
+      </section>
+
       <section id="v-home" class="stack" hidden>
         <div class="flow">
           <div class="panel fstep">

@@ -28,7 +28,7 @@ let ME = null, MYPROFILE = null;            // utilisateur connecté
 const MEMBERS = new Map();                  // uid -> { p, prix, maj, suivi, journal, loaded }
 let VIEW = null;                            // uid du profil affiché
 let S = blank();                            // données du profil affiché
-let open = new Set(), tab = "home", rfilter = "";
+let open = new Set(), tab = "calc", rfilter = "";
 let gran = lsGet("gran") || "semaine", ggran = lsGet("ggran") || "semaine", demoOn = true, charts = {};
 const pendingPrix = new Set();
 
@@ -349,6 +349,7 @@ function renderHeader() {
 $("#members").addEventListener("click", e => { const b = e.target.closest("[data-view]"); if (!b) return; if (isHidden(b.dataset.view)) { toast("Ce profil est privé"); return; } setView(b.dataset.view); });
 $("#btnBackMe").addEventListener("click", () => setView(ME));
 const TITLES = {
+  calc: ["Calculer un craft", "Mes kamas → les prix en HDV → combien j'en crafte et ce que je gagne"],
   home: ["Mes kamas", "Ce que j'engage, où je le place, ce que je gagne"],
   dash: ["Résultats", "Ce que tu as vraiment gagné : par jour, semaine, mois, année"],
   grp: ["Le groupe", "Bilans et classement des membres"],
@@ -363,7 +364,7 @@ function setTab(t) {
   tab = t; lsSet("tab", t);
   $("#pageTitle").textContent = TITLES[t][0]; $("#pageSub").textContent = TITLES[t][1];
   document.querySelectorAll("nav [data-tab]").forEach(x => x.setAttribute("aria-selected", x.dataset.tab === t));
-  ["home", "dash", "grp", "cat", "crafts", "res", "jr", "pet"].forEach(x => $("#v-" + x).hidden = x !== t);
+  ["calc", "home", "dash", "grp", "cat", "crafts", "res", "jr", "pet"].forEach(x => $("#v-" + x).hidden = x !== t);
   if (t === "dash") lsSet("lastDash", today());
   render();
 }
@@ -379,6 +380,7 @@ function render() {
   const nRun = S.journal.filter(e => !isDone(e)).length;
   $("#cJr").textContent = nRun; $("#cJr").title = `${nRun} série(s) en cours`;
   if (tab === "home") renderHome();
+  if (tab === "calc") renderCalc();
   if (tab === "pet") renderPet();
   if (tab === "dash") renderDash();
   if (tab === "grp") renderGroup();
@@ -699,6 +701,87 @@ document.addEventListener("click", e => {
 });
 $("#homeCap").addEventListener("change", e => { const v = Math.max(0, +e.target.value || 0); lsSet("budget", String(v)); deferRender(); });
 document.addEventListener("click", e => { const b = e.target.closest("[data-hp]"); if (!b) return; homePer = b.dataset.hp; lsSet("homePer", homePer); renderHome(); });
+
+// ----- Calculer un craft : mes kamas → prix HDV des ressources → prix de vente → combien et quel bénéfice
+let calcId = +lsGet("calcItem") || null; const calcLot = {};
+function calcState() {
+  const it = ITEMS.get(calcId); if (!it) return null;
+  const s = S.suivi.find(x => x.id === calcId) || { id: calcId };
+  let cost = 0, miss = 0; const lines = recipeOf(s).map(([rid, q]) => { const pi = priceInfo(rid); if (pi.v == null) miss++; else cost += pi.v * q; return { rid, q, pi }; });
+  const pv = +s.pv || 0, net = pv * (1 - taxe()), ben = miss || !pv ? null : net - cost;
+  const engaged = S.journal.filter(e => !isDone(e)).reduce((a, e) => a + coutT(e), 0), bud = +lsGet("budget") || 0, free = Math.max(0, bud - engaged);
+  return { it, s, lines, cost, miss, pv, net, ben, bud, engaged, free, canDo: !miss && cost > 0 ? Math.floor(free / cost) : null };
+}
+function renderCalc() {
+  const me = isMe(), x = calcState(), bud = +lsGet("budget") || 0;
+  if (document.activeElement !== $("#cBud")) $("#cBud").value = bud ? lotFmt(bud) : "";
+  $("#cItem").innerHTML = x ? `<div class="citem"><b>${esc(x.it.n)}</b><small>Niv. ${x.it.l} · ${esc(D.types[x.it.t] || "")}${x.it.j ? " · " + esc(x.it.j) : ""}</small></div>` : `<p class="note" style="margin:0">Cherche l'item dont tu regardes le prix en HDV.</p>`;
+  ["cIngP", "cSellP", "cResP"].forEach(k => $("#" + k).hidden = !x);
+  if (!x) { const eng = S.journal.filter(e => !isDone(e)).reduce((a, e) => a + coutT(e), 0); $("#cBudNote").innerHTML = bud ? (eng ? `Dont ${fmt(eng)} déjà engagés dans des ventes en cours : <b>${fmt(Math.max(0, bud - eng))}</b> disponibles.` : `<b>${fmt(bud)}</b> disponibles.`) : ""; return; }
+  keepFocus(() => {
+    $("#cIng").innerHTML = x.lines.map(l => { const lot = calcLot[l.rid] || 1, own = +S.prix[l.rid] > 0; return `<tr>
+      <td class="l"><b>${esc(resName(l.rid))}</b>${l.pi.src === "groupe" ? ' <span class="grp-tag" title="Prix proposé par ton groupe : tape le tien pour le remplacer">groupe</span>' : ""}</td>
+      <td class="m">${l.q}</td>
+      <td><input class="num lot ${l.pi.v == null ? "miss" : own ? "" : "grp"}" id="cp-${l.rid}" data-cp="${l.rid}" data-col="cp" type="text" inputmode="decimal" autocomplete="off" value="${own ? lotFmt(S.prix[l.rid] * lot) : ""}" placeholder="${l.pi.v != null ? lotFmt(l.pi.v * lot) : "prix ?"}" aria-label="Prix HDV de ${esc(resName(l.rid))}"></td>
+      <td class="l"><select data-clot="${l.rid}" aria-label="Le prix est pour combien d'unités">${LOTS.map(n => `<option value="${n}" ${n === lot ? "selected" : ""}>${n === 1 ? "1 unité" : fmt(n) + " unités"}</option>`).join("")}</select></td>
+      <td class="m" id="cl-${l.rid}">${l.pi.v != null ? fmt(l.pi.v * l.q) : "–"}</td></tr>`; }).join("") + `<tr class="ctot"><td class="l" colspan="4"><b>Coût d'un craft</b></td><td class="m"><b id="cCost">${x.miss ? `<span class="miss-t">il manque ${x.miss} prix</span>` : fmt(x.cost)}</b></td></tr>`;
+  });
+  if (document.activeElement !== $("#cPv")) $("#cPv").value = x.pv ? lotFmt(x.pv) : "";
+  calcTotals();
+}
+function calcTotals() {
+  const x = calcState(); if (!x) return;
+  $("#cBudNote").innerHTML = x.bud ? (x.engaged ? `Dont ${fmt(x.engaged)} déjà engagés dans des ventes en cours : <b>${fmt(x.free)}</b> disponibles.` : `<b>${fmt(x.free)}</b> disponibles.`) : "";
+  $("#cCost").innerHTML = x.miss ? `<span class="miss-t">il manque ${x.miss} prix</span>` : fmt(x.cost);
+  x.lines.forEach(l => { const c = document.getElementById("cl-" + l.rid); if (c) c.textContent = l.pi.v != null ? fmt(l.pi.v * l.q) : "–"; });
+  $("#cPvNote").textContent = x.pv ? `Après la taxe HDV de ${Math.round(taxe() * 1000) / 10} % : ${fmt(x.net)} pour toi.` : "";
+  const roi = x.ben != null && x.cost ? x.ben / x.cost : null;
+  $("#cSum").innerHTML = `
+    <div class="tot"><span>Coût d'un craft</span><b>${x.miss ? "?" : fmt(x.cost)}</b></div>
+    <div class="tot"><span>Vente d'un item (taxe déduite)</span><b>${x.pv ? fmt(x.net) : "?"}</b></div>
+    <div class="tot"><span>Bénéfice par craft</span><b class="${x.ben < 0 ? "neg" : x.ben > 0 ? "pos" : ""}">${x.ben != null ? `${x.ben > 0 ? "+" : ""}${fmt(x.ben)} <small>(${pillTxt(roi)})</small>` : "?"}</b></div>
+    <div class="tot"><span>Avec mes kamas, j'en crafte au plus</span><b>${x.canDo != null && x.bud ? fmt(x.canDo) : "?"}</b></div>`;
+  const q = Math.max(1, Math.round(+$("#cQ").value || 1));
+  $("#cBen").textContent = x.ben != null ? `${x.ben * q > 0 ? "+" : ""}${fmt(x.ben * q)}` : "–"; $("#cBen").style.color = x.ben == null ? "" : x.ben < 0 ? "var(--bad)" : "var(--good)";
+  const need = x.miss ? null : x.cost * q;
+  $("#cGoNote").innerHTML = x.miss ? "Complète d'abord les prix des ressources (étape 3)." : !x.pv ? "Indique le prix de vente (étape 4)." : `Ça t'engage ${fmt(need)} kamas${x.bud && need > x.free ? ` · <span class="neg">plus que tes ${fmt(x.free)} disponibles</span>` : ""}. La série ira dans « Mes séries », où tu noteras la mise en vente puis les ventes.`;
+  $("#cGo").disabled = !!x.miss || !x.pv;
+}
+function calcPick(id) { calcId = id; lsSet("calcItem", String(id)); $("#cSearch").value = ""; $("#cResults").hidden = true; $("#cQ").value = 1; renderCalc(); applyRO(); setTimeout(() => (document.querySelector("#cIng input.miss") || $("#cPv")).focus(), 0); }
+$("#cSearch").addEventListener("input", e => {
+  const f = norm(e.target.value.trim()), box = $("#cResults"); if (f.length < 2) { box.hidden = true; return; }
+  const toks = f.split(/\s+/), H = D.items.filter(it => toks.every(t => it.nt.includes(t))).slice(0, 14);
+  box.innerHTML = H.length ? H.map((it, i) => `<li data-cpick="${it.id}" class="${i === 0 ? "hl" : ""}"><span>${esc(it.n)}</span><small>Niv. ${it.l} · ${esc(D.types[it.t] || "")}</small></li>`).join("") : `<li class="note">Aucun item craftable trouvé</li>`;
+  box.hidden = false;
+});
+$("#cSearch").addEventListener("keydown", e => {
+  const box = $("#cResults"), li = [...box.querySelectorAll("[data-cpick]")]; if (box.hidden || !li.length) return;
+  let h = li.findIndex(x => x.classList.contains("hl"));
+  if (e.key === "ArrowDown" || e.key === "ArrowUp") { e.preventDefault(); h = (h + (e.key === "ArrowDown" ? 1 : li.length - 1)) % li.length; li.forEach((x, i) => x.classList.toggle("hl", i === h)); }
+  if (e.key === "Enter") { e.preventDefault(); calcPick(+li[Math.max(0, h)].dataset.cpick); }
+  if (e.key === "Escape") box.hidden = true;
+});
+$("#cResults").addEventListener("mousedown", e => { const li = e.target.closest("[data-cpick]"); if (li) { e.preventDefault(); calcPick(+li.dataset.cpick); } });
+$("#cSearch").addEventListener("blur", () => setTimeout(() => $("#cResults").hidden = true, 120));
+$("#cBud").addEventListener("input", e => { const v = lotParse(e.target.value); if (v == null) return; lsSet("budget", String(Math.round(v))); if (calcState()) calcTotals(); else renderCalc(); });
+$("#cBud").addEventListener("change", () => deferRender());
+$("#cQ").addEventListener("input", calcTotals);
+$("#v-calc").addEventListener("input", e => {
+  const t = e.target; if (!isMe()) return;
+  if (t.dataset.cp) { const v = lotParse(t.value); if (v == null) return; const lot = calcLot[t.dataset.cp] || 1; setPrice(t.dataset.cp, v / lot); t.classList.toggle("miss", !(v > 0)); t.classList.remove("grp"); calcTotals(); return; }
+  if (t.id === "cPv") { const v = lotParse(t.value); if (v == null) return; let s = S.suivi.find(x => x.id === calcId); if (!s) { s = { id: calcId, brk: 0 }; S.suivi.push(s); } s.pv = v; s.mv = today(); saveSuiviLater(); calcTotals(); }
+});
+$("#v-calc").addEventListener("change", e => {
+  const t = e.target;
+  if (t.dataset.clot) { calcLot[t.dataset.clot] = +t.value; renderCalc(); applyRO(); return; }
+  if (t.dataset.cp || t.id === "cPv") deferRender();
+});
+$("#cGo").addEventListener("click", () => {
+  const x = calcState(); if (!x || x.miss || !x.pv || !isMe()) return; const q = Math.max(1, Math.round(+$("#cQ").value || 1));
+  if (!S.suivi.some(s => s.id === calcId)) { S.suivi.push({ id: calcId, brk: 0, pv: x.pv, mv: today() }); Store.saveSuivi(); }
+  Store.addJr({ item: calcId, nom: x.it.n, qte: q, cout: Math.round(x.cost * q), achat: today(), brisage: "", runes: 0, vente: "", encaisse: 0, src: "craft", dest: "revente" });
+  toast(`${q} × ${x.it.n} lancé${q > 1 ? "s" : ""} : à suivre dans « Mes séries »`);
+});
 
 // ----- Catalogue : toutes les recettes du jeu, avec filtres (catégorie, type, métier, niveau, nom)
 const CATF = (() => { try { return JSON.parse(lsGet("catF") || "{}"); } catch (e) { return {}; } })();
