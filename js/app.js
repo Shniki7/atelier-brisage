@@ -156,10 +156,19 @@ function subscribeMember(uid) {
     render();
   }, onErr));
 }
-function onErr(e) { console.error(e); if (e.code === "permission-denied") toast("Accès refusé par les règles Firestore"); }
+function onErr(e) { console.error(e); showError(e.code === "permission-denied" ? "Lecture refusée par Firebase : vérifie que les règles Firestore sont bien publiées." : "Lecture impossible : " + (e.code || e.message)); }
 function fail(e) {
   console.error(e);
-  toast(e?.code === "permission-denied" ? "Enregistrement refusé : tu ne peux modifier que ton profil" : "Enregistrement impossible pour l'instant, réessaie");
+  const msg = e?.code === "permission-denied" ? "Enregistrement refusé par Firebase : vérifie que les règles Firestore sont bien publiées."
+    : e?.code === "not-found" ? "La base Firestore n'existe pas encore : crée-la dans la console Firebase."
+    : "Enregistrement impossible : " + (e?.code || e?.message || "erreur inconnue");
+  showError(msg);
+}
+function showError(msg) {
+  let b = $("#errBar");
+  if (!b) { b = document.createElement("div"); b.id = "errBar"; b.className = "err"; b.setAttribute("role", "alert"); b.style.cssText = "display:flex;gap:10px;justify-content:space-between;align-items:center"; $(".content").prepend(b); }
+  b.innerHTML = `<span>${esc(msg)}</span><button class="ghost x" type="button" aria-label="Fermer">×</button>`;
+  b.querySelector("button").onclick = () => b.remove();
 }
 const Store = {
   savePrix() { if (!isMe()) return; pendingPrix.clear(); db.doc(`profiles/${ME}/data/prix`).set({ p: { ...S.prix }, m: { ...S.maj } }).catch(fail); },
