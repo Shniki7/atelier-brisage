@@ -1,4 +1,4 @@
-"""Extrait les recettes d'équipements Dofus 3 depuis la base dofus-sqlite
+"""Extrait TOUTES les recettes Dofus 3 (équipements, consommables, ressources, objets de quête, apparat) depuis la base dofus-sqlite
 (https://github.com/ledouxm/dofus-sqlite) et écrit data/recettes.json.
 
 Usage : python3 scripts/maj_recettes.py dofus.sqlite itemsdata.json data/recettes.json
@@ -26,20 +26,19 @@ ing = {}
 for rid, tid in c.execute("select RecipeData_id,target_id from RecipeData_ingredientIds_junction order by rowid"):
     ing.setdefault(rid, []).append(tid)
 
-EXCLUS = ('Outil', 'Pelle', 'Pioche', "Pierre d'âme", 'Filet de capture', 'Trophée', 'Prysmaradite')
-items, res, types, incoherences = [], {}, {}, 0
+# catégories du jeu (ItemTypeData.categoryId)
+CATS = {0: 'Équipements', 1: 'Consommables', 2: 'Ressources', 3: 'Quêtes et idoles', 5: 'Apparat'}
+items, res, types, tcat, incoherences = [], {}, {}, {}, 0
 for uid, resid, q, job in c.execute("select id,resultId,quantities,jobId from RecipeData"):
     it = I.get(resid)
     if not it:
         continue
     ty = Ty.get(it[2])
-    if not ty or ty[1] != 0:          # catégorie 0 = équipements
+    if not ty:
         continue
     tn = nm(ty[0]) or ''
-    if 'Percepteur' in tn or tn in EXCLUS:
-        continue
     n = nm(it[1])
-    if not n or n.startswith('Cadeau'):
+    if not n:
         continue
     q = json.loads(q)
     ids = ing.get(uid, [])
@@ -47,6 +46,7 @@ for uid, resid, q, job in c.execute("select id,resultId,quantities,jobId from Re
         incoherences += 1
         continue
     types[it[2]] = tn
+    tcat[it[2]] = ty[1]
     for i in ids:
         res[i] = (nm(I[i][1]) if i in I else None) or str(i)
     items.append([resid, n, it[3], it[2], J.get(job, '') or '', [[i, x] for i, x in zip(ids, q)]])
@@ -93,7 +93,7 @@ for r in refs:
         fx[str(iid)] = lines
 print(f"objets avec effets={len(fx)} caracteristiques={len(stats)}")
 print(f"items={len(items)} ressources={len(res)} incoherences={incoherences}")
-if len(items) < 2500 or incoherences > 50 or len(fx) < 2000:
+if len(items) < 4000 or incoherences > 80 or len(fx) < 2000:
     print("Extraction anormale : data/recettes.json n'est pas modifié.")
     sys.exit(1)
 
@@ -124,6 +124,8 @@ print(f"ressources={len(allres)} courbe={len(petcurve)} xp_guides={len(petxp)}")
 d = {
     'src': 'Dofus 3 (dofus-sqlite, ' + datetime.date.today().strftime('%d/%m/%Y') + ')',
     'types': {str(k): v for k, v in types.items()},
+    'tcat': {str(k): v for k, v in tcat.items()},
+    'cats': {str(k): v for k, v in CATS.items()},
     'res': {str(k): v for k, v in res.items()},
     'items': items,
     'fx': fx,

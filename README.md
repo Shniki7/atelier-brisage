@@ -2,7 +2,8 @@
 
 Outil de rentabilité du craft et du brisage pour **Dofus 3**, à partager entre amis.
 
-- **2 799 recettes d'équipements Dofus 3**, extraites des fichiers du jeu et mises à jour chaque semaine par GitHub.
+- **Toutes les recettes de Dofus 3 (4 743)** : équipements, trophées, prysmaradites, potions, nourriture, ressources transformées, objets de quête, idoles, apparat… extraites des fichiers du jeu et mises à jour chaque semaine par GitHub.
+- **Catalogue** : tout ce qui se fabrique, avec filtres par catégorie, type, métier et niveau, et la recette de chaque objet.
 - **Mes kamas** (page d'accueil) : 1. les kamas que j'engage → 2. mon panier (je cherche un item, je choisis le moyen et la quantité, l'outil calcule ce que j'engage et ce que je gagne, puis « Lancer le panier ») avec des idées si besoin → 3. ce qui est en cours → 4. mon bénéfice.
 - **Opportunités** : pour chaque item suivi, la meilleure des 4 options (crafter ou acheter, puis briser ou revendre), avec un indice de fiabilité. Le plan pour ton budget est dans « Mes kamas › Des idées ? ».
 - **Prix du marché** : tous tes prix au même endroit (ressources, runes, items), avec les prix proposés par ton groupe.
@@ -112,7 +113,7 @@ Le fichier `.github/workflows/maj-recettes.yml` tourne chaque mercredi matin sur
 3. il enregistre le fichier seulement si des recettes ont changé. Le message du commit indique combien ont été ajoutées, supprimées ou modifiées.
 
 Pour le lancer à la main : onglet **Actions > Mise à jour des recettes Dofus 3 > Run workflow**.
-Si l'extraction paraît anormale (moins de 2 500 items), rien n'est modifié et l'action apparaît en échec.
+Si l'extraction paraît anormale (moins de 4 000 recettes), rien n'est modifié et l'action apparaît en échec.
 
 Quand tu modifies une recette à la main dans l'outil (quantité, ingrédient retiré), ta version est gardée dans ton profil. Le bouton « Revenir à la recette du jeu » reprend celle du fichier.
 

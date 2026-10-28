@@ -514,6 +514,17 @@ td.r{text-align:right}
 
 input.lot{width:96px}
 
+.cat-ctl{display:flex;flex-wrap:wrap;gap:10px;align-items:center}
+.cat-ctl .search{flex:1 1 220px;max-width:none}
+.cat-ctl select{max-width:240px}
+.cat-ctl .lvl{display:flex;gap:6px;align-items:center}.cat-ctl .lvl input{width:84px}
+.t-cat{min-width:720px}.t-cat td{padding:8px}
+.cat-n{font-weight:600;color:var(--fg);text-decoration:none;text-align:left}
+.cat-n .chev{display:inline-block;transition:transform .15s;color:var(--muted)}
+tr.open .cat-n .chev{transform:rotate(90deg)}
+tr.cat-rec td{background:var(--surface-2);padding:6px 14px 10px}
+.cat-more{display:flex;justify-content:center}.cat-more:empty{display:none}
+
 /* ---------- lecture seule ---------- */
 body.ro .own-only{display:none!important}
 

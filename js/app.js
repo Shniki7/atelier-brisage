@@ -283,7 +283,7 @@ function loadRecipes() {
   if (D) { afterLoad(); return; }
   fetch("data/recettes.json").then(r => r.json()).then(d => {
     d.items = d.items.map(([id, n, l, t, j, ing]) => ({ id, n, l, t, j, ing, nn: norm(n) }));
-    D = d; d.items.forEach(it => ITEMS.set(it.id, it));
+    D = d; d.items.forEach(it => { it.nt = it.nn + " " + norm(d.types[it.t] || ""); ITEMS.set(it.id, it); });
     fetch("data/xp-table.json").then(r => r.json()).then(x => { D.xptable = x; if (tab === "pet") render(); }).catch(() => { });
     afterLoad();
   }).catch(() => { $("#loading").textContent = "Impossible de charger data/recettes.json. Ouvre l'outil depuis GitHub Pages ou un petit serveur local (voir le README)."; });
@@ -316,6 +316,7 @@ const TITLES = {
   dash: ["Résultats", "Ce que tu as vraiment gagné : par jour, semaine, mois, année"],
   grp: ["Le groupe", "Bilans et classement des membres"],
   pet: ["Familiers", "Monter un familier au meilleur prix"],
+  cat: ["Catalogue", "Tout ce qui se fabrique dans Dofus 3 : cherche, filtre, puis suis un item ou mets-le au panier"],
   crafts: ["Opportunités", "Quoi crafter ou acheter, et quoi en faire, pour gagner le plus"],
   res: ["Prix du marché", "Tous tes prix au même endroit"],
   jr: ["Mes séries", "Ce que tu as lancé, de l'achat jusqu'à la vente"]
@@ -325,7 +326,7 @@ function setTab(t) {
   tab = t; lsSet("tab", t);
   $("#pageTitle").textContent = TITLES[t][0]; $("#pageSub").textContent = TITLES[t][1];
   document.querySelectorAll("nav [data-tab]").forEach(x => x.setAttribute("aria-selected", x.dataset.tab === t));
-  ["home", "dash", "grp", "crafts", "res", "jr", "pet"].forEach(x => $("#v-" + x).hidden = x !== t);
+  ["home", "dash", "grp", "cat", "crafts", "res", "jr", "pet"].forEach(x => $("#v-" + x).hidden = x !== t);
   if (t === "dash") lsSet("lastDash", today());
   render();
 }
@@ -345,6 +346,7 @@ function render() {
   if (tab === "dash") renderDash();
   if (tab === "grp") renderGroup();
   if (tab === "crafts") renderCrafts();
+  if (tab === "cat") renderCat();
   if (tab === "res") renderRes();
   if (tab === "jr") renderJr();
   applyRO();
@@ -361,7 +363,7 @@ function keepFocus(fn) {
 
 // ----- tri par colonne : clic sur un en-tête (un 2e clic inverse) ; les valeurs vides restent en bas
 const SORTS = (() => { try { return JSON.parse(lsGet("sorts") || "{}"); } catch (e) { return {}; } })();
-const SORT_DEF = { pet: ["per", 1], opp: ["benef", -1], res: ["auto", 1], runes: ["auto", 1] }; // auto : prix manquants d'abord, puis par nom
+const SORT_DEF = { cat: ["lvl", -1], pet: ["per", 1], opp: ["benef", -1], res: ["auto", 1], runes: ["auto", 1] }; // auto : prix manquants d'abord, puis par nom
 function sortCmp(t, get) {
   const [k, d] = SORTS[t] || SORT_DEF[t]; const g = get[k] || (() => null);
   return (a, b) => {
@@ -628,7 +630,7 @@ function renderCart(free) {
 }
 $("#cq").addEventListener("input", e => {
   const f = norm(e.target.value.trim()), box = $("#cqres"); if (f.length < 2) { box.hidden = true; return; }
-  const toks = f.split(/\s+/), H = D.items.filter(it => toks.every(t => it.nn.includes(t))).slice(0, 14);
+  const toks = f.split(/\s+/), H = D.items.filter(it => toks.every(t => it.nt.includes(t))).slice(0, 14);
   box.innerHTML = H.length ? H.map((it, i) => `<li data-cadd="${it.id}" class="${i === 0 ? "hl" : ""}"><span>${esc(it.n)}</span><small>Niv. ${it.l} · ${esc(D.types[it.t] || "")}</small></li>`).join("") : `<li class="note">Aucun item craftable trouvé</li>`;
   box.hidden = false;
 });
@@ -660,6 +662,49 @@ document.addEventListener("click", e => {
 });
 $("#homeCap").addEventListener("change", e => { const v = Math.max(0, +e.target.value || 0); lsSet("budget", String(v)); deferRender(); });
 document.addEventListener("click", e => { const b = e.target.closest("[data-hp]"); if (!b) return; homePer = b.dataset.hp; lsSet("homePer", homePer); renderHome(); });
+
+// ----- Catalogue : toutes les recettes du jeu, avec filtres (catégorie, type, métier, niveau, nom)
+const CATF = (() => { try { return JSON.parse(lsGet("catF") || "{}"); } catch (e) { return {}; } })();
+let catShown = 50; const catOpen = new Set();
+const catOf = it => String(D.tcat?.[it.t] ?? 0);
+function catFill() {
+  const fit = (skip) => D.items.filter(it => (skip === "c" || !CATF.c || catOf(it) === CATF.c) && (skip === "t" || skip === "c" || !CATF.t || String(it.t) === CATF.t) && (skip === "j" || !CATF.j || it.j === CATF.j));
+  const count = (list, key) => { const m = new Map(); for (const it of list) m.set(key(it), (m.get(key(it)) || 0) + 1); return m; };
+  const cc = count(fit("c"), catOf), tc = count(fit("t"), it => String(it.t)), jc = count(fit("j"), it => it.j);
+  $("#catC").innerHTML = `<option value="">Toutes les catégories</option>` + Object.entries(D.cats || {}).filter(([k]) => cc.get(k)).map(([k, v]) => `<option value="${k}">${esc(v)} (${cc.get(k)})</option>`).join("");
+  $("#catT").innerHTML = `<option value="">Tous les types</option>` + [...tc.entries()].map(([k, n]) => [k, D.types[k] || k, n]).sort((a, b) => a[1].localeCompare(b[1], "fr")).map(([k, v, n]) => `<option value="${k}">${esc(v)} (${n})</option>`).join("");
+  $("#catJ").innerHTML = `<option value="">Tous les métiers</option>` + [...jc.entries()].filter(([k]) => k).sort((a, b) => a[0].localeCompare(b[0], "fr")).map(([k, n]) => `<option value="${esc(k)}">${esc(k)} (${n})</option>`).join("");
+  $("#catC").value = CATF.c || ""; $("#catT").value = CATF.t || ""; $("#catJ").value = CATF.j || "";
+  if (document.activeElement !== $("#catQ")) $("#catQ").value = CATF.q || "";
+  $("#catL1").value = CATF.l1 || ""; $("#catL2").value = CATF.l2 || "";
+}
+function renderCat() {
+  catFill();
+  const toks = norm(CATF.q || "").trim().split(/\s+/).filter(Boolean), l1 = +CATF.l1 || 0, l2 = +CATF.l2 || 999;
+  const list = D.items.filter(it => (!CATF.c || catOf(it) === CATF.c) && (!CATF.t || String(it.t) === CATF.t) && (!CATF.j || it.j === CATF.j) && it.l >= l1 && it.l <= l2 && toks.every(t => it.nt.includes(t)))
+    .map(it => { const c = costOf({ id: it.id }); return { it, cost: c.miss ? null : c.cost, miss: c.miss }; });
+  list.sort(sortCmp("cat", { name: x => x.it.n, type: x => D.types[x.it.t] || "", lvl: x => x.it.l, job: x => x.it.j || null, cost: x => x.cost }));
+  markSort("cat");
+  const followed = new Set(S.suivi.map(x => x.id)), me = isMe();
+  $("#catInfo").textContent = `${fmt(list.length)} recette${list.length > 1 ? "s" : ""} sur ${fmt(D.items.length)}. Clique sur un nom pour voir sa recette.`;
+  $("#catRows").innerHTML = list.slice(0, catShown).map(({ it, cost, miss }) => `<tr data-catid="${it.id}" class="${catOpen.has(it.id) ? "open" : ""}">
+      <td class="l"><button class="linkish cat-n" type="button" data-catopen="${it.id}" aria-expanded="${catOpen.has(it.id)}"><span class="chev">›</span> ${esc(it.n)}</button></td>
+      <td class="l note">${esc(D.types[it.t] || "")}</td><td class="m">${it.l}</td><td class="l note">${esc(it.j || "–")}</td>
+      <td class="m">${cost != null ? fmt(cost) : `<small class="note">${miss} prix ?</small>`}</td>
+      <td class="acts">${me ? `${followed.has(it.id) ? `<span class="note" title="Déjà dans Opportunités">suivi ✓</span>` : `<button class="ghost" type="button" data-catfollow="${it.id}">Suivre</button>`}<button class="ghost" type="button" data-cart-add="${it.id}" data-q="1">+ panier</button>` : ""}</td></tr>
+    ${catOpen.has(it.id) ? `<tr class="cat-rec"><td colspan="6"><ul class="kv">${it.ing.map(([rid, q]) => { const pi = priceInfo(rid); return `<li><span>${q} × ${esc(resName(rid))}${ITEMS.has(rid) ? ' <span class="tag-g" title="Cet ingrédient se fabrique aussi">craftable</span>' : ""}</span><b class="mono">${pi.v != null ? fmt(pi.v * q) : '<span class="miss-t">prix ?</span>'}</b></li>`; }).join("")}</ul></td></tr>` : ""}`).join("")
+    || `<tr><td colspan="6" class="empty">Aucune recette ne correspond à ces filtres.</td></tr>`;
+  $("#catMore").innerHTML = list.length > catShown ? `<button type="button" class="ghost" id="catMoreBtn">Afficher ${Math.min(50, list.length - catShown)} de plus (${fmt(list.length - catShown)} restantes)</button>` : "";
+}
+function catSet(k, v) { if (v) CATF[k] = v; else delete CATF[k]; if (k === "c") delete CATF.t; lsSet("catF", JSON.stringify(CATF)); catShown = 50; renderCat(); applyRO(); }
+$("#catQ").addEventListener("input", e => catSet("q", e.target.value));
+[["catC", "c"], ["catT", "t"], ["catJ", "j"], ["catL1", "l1"], ["catL2", "l2"]].forEach(([id, k]) => $("#" + id).addEventListener("change", e => catSet(k, e.target.value)));
+$("#catReset").addEventListener("click", () => { for (const k of Object.keys(CATF)) delete CATF[k]; lsSet("catF", "{}"); catShown = 50; renderCat(); applyRO(); });
+$("#v-cat").addEventListener("click", e => {
+  if (e.target.closest("#catMoreBtn")) { catShown += 50; renderCat(); applyRO(); return; }
+  const o = e.target.closest("[data-catopen]"); if (o) { const id = +o.dataset.catopen; catOpen.has(id) ? catOpen.delete(id) : catOpen.add(id); renderCat(); applyRO(); return; }
+  const f = e.target.closest("[data-catfollow]"); if (f && isMe()) { const id = +f.dataset.catfollow; if (!S.suivi.some(x => x.id === id)) { S.suivi.push({ id, brk: 0 }); Store.saveSuivi(); } render(); toast(`${ITEMS.get(id).n} ajouté à Opportunités`); }
+});
 
 // ----- Familiers : XP par ressource (moi > groupe > guide) et coût pour atteindre un niveau
 const resName = id => D.allres?.[id] || D.res?.[id] || D.xptable?.names?.[id] || "Ressource " + id;
@@ -1064,7 +1109,7 @@ function search(v) {
   const f = norm(v.trim()); const box = $("#qres");
   if (f.length < 2) { box.hidden = true; return; }
   const toks = f.split(/\s+/);
-  hits = D.items.filter(it => toks.every(t => it.nn.includes(t))).slice(0, 14); hl = 0;
+  hits = D.items.filter(it => toks.every(t => it.nt.includes(t))).slice(0, 14); hl = 0;
   box.innerHTML = hits.length ? hits.map((it, i) => `<li data-add="${it.id}" class="${i === 0 ? "hl" : ""}"><span>${esc(it.n)}${S.suivi.some(s => s.id === it.id) ? " ✓" : ""}</span><small>Niv. ${it.l} · ${esc(D.types[it.t] || "")}</small></li>`).join("") : `<li class="note">Aucun item craftable trouvé</li>`;
   box.hidden = false;
 }
