@@ -702,6 +702,12 @@ document.addEventListener("click", e => {
 $("#homeCap").addEventListener("change", e => { const v = Math.max(0, +e.target.value || 0); lsSet("budget", String(v)); deferRender(); });
 document.addEventListener("click", e => { const b = e.target.closest("[data-hp]"); if (!b) return; homePer = b.dataset.hp; lsSet("homePer", homePer); renderHome(); });
 
+// ----- cases de nombres : un clic sélectionne tout, ce qu'on tape remplace la valeur (comme dans un tableur)
+// (sinon, chiffres alignés à droite, le curseur se plaçait au début et la saisie s'ajoutait devant : 150 → 200150)
+let selOnUp = null;
+document.addEventListener("focusin", e => { const t = e.target; if (t.matches?.("input.num, input.lot") && !t.disabled) { selOnUp = t; setTimeout(() => { try { t.select(); } catch (x) { } }, 0); } });
+document.addEventListener("mouseup", e => { if (selOnUp && e.target === selOnUp) { e.preventDefault(); } selOnUp = null; });
+
 // ----- Calculer un craft : mes kamas → prix HDV des ressources → prix de vente → combien et quel bénéfice
 let calcId = +lsGet("calcItem") || null; const calcLot = {};
 function calcState() {
