@@ -391,7 +391,7 @@ function renderPlan(rows) {
   const plan = []; let inv = 0, ben = 0;
   for (const r of cands) { const q = Math.min(maxq, Math.floor(budget / r.cost)); if (q <= 0) continue; plan.push({ ...r, q }); budget -= q * r.cost; inv += q * r.cost; ben += q * r.benef; }
   $("#plan").innerHTML = plan.length ? plan.map(p => `<li><span class="qty">${p.q}×</span><span>${esc(p.it.n)}<br><small class="note">${fmt(p.cost)} pièce · ${pillTxt(p.roi)}</small></span><span class="pf">+${fmt(p.q * p.benef)}</span></li>`).join("")
-    : `<li class="empty">${cands.length ? "Budget trop faible pour le moins cher des crafts rentables." : "Renseigne les prix des ressources et des runes pour obtenir un plan."}</li>`;
+    : `<li class="empty">${cands.length ? `Ton budget (${fmt(+$("#budget").value || 0)}) ne suffit pas : le craft rentable le moins cher coûte ${fmt(Math.min(...cands.map(c => c.cost)))}. Augmente le budget.` : "Renseigne les prix des ressources et des runes pour obtenir un plan."}</li>`;
   $("#tInv").textContent = fmt(inv); $("#tBen").textContent = fmt(ben);
 }
 
@@ -415,9 +415,9 @@ function renderRes() {
     (a, b) => ((unitPrice(a.rid) != null) - (unitPrice(b.rid) != null)) || a.n.localeCompare(b.n, "fr"));
   keepFocus(() => {
     $("#runes").innerHTML = runes.length ? runes.map(x => { const p = S.rp[x.a], pi = runePriceInfo(x.a); return `<tr>
-      <td class="l"><b>Rune ${esc(x.st[0])}</b><small class="note" style="display:block">poids ${x.st[1]}</small></td>
+      <td class="l"><b>Rune ${esc(x.st[0])}</b><small class="note adv" style="display:block">poids ${x.st[1]}</small></td>
       <td class="l note">${esc([...new Set(x.its)].slice(0, 4).join(", "))}${new Set(x.its).size > 4 ? "…" : ""}</td>
-      <td><input class="num" id="rpt-${x.a}" data-runepts="${x.a}" data-col="rpt" type="number" min="1" value="${S.rpt[x.a] || x.st[2]}" aria-label="Points apportés par une rune ${esc(x.st[0])}" style="width:80px"></td>
+      <td class="adv"><input class="num" id="rpt-${x.a}" data-runepts="${x.a}" data-col="rpt" type="number" min="1" value="${S.rpt[x.a] || x.st[2]}" aria-label="Points apportés par une rune ${esc(x.st[0])}" style="width:80px"></td>
       <td><input class="num ${phCls(pi, p)}" id="rup-${x.a}" data-runep="${x.a}" data-col="rup" type="number" min="0" value="${p || ""}" placeholder="${phTxt(pi)}" title="${phTitle(pi)}" aria-label="Prix de la rune ${esc(x.st[0])}"></td>
       <td class="m note">${p > 0 ? fdate(S.rm[x.a]) : pi.src === "groupe" ? `<span class="grp-tag">groupe</span>` : "–"}</td></tr>`; }).join("")
       : `<tr><td colspan="5" class="empty">${S.suivi.length ? "Aucune rune ne correspond au filtre." : "Ajoute des items dans « Crafts suivis » pour voir les runes qu'ils donnent."}</td></tr>`;
@@ -857,6 +857,8 @@ document.addEventListener("keydown", e => {
     const btn = el.closest?.("tr")?.querySelector(`[data-quick="${k === "b" ? "brise" : "vendu"}"]`); if (btn) { e.preventDefault(); btn.click(); }
   }
 });
+$("#advToggle").addEventListener("change", e => { document.body.classList.toggle("adv-on", e.target.checked); lsSet("adv", e.target.checked ? "1" : ""); });
+if (lsGet("adv")) { document.body.classList.add("adv-on"); $("#advToggle").checked = true; }
 $("#btnHelp").addEventListener("click", () => { $("#helpPanel").hidden = false; });
 $("#helpPanel").addEventListener("click", e => { if (e.target.id === "helpPanel" || e.target.closest("[data-close]")) $("#helpPanel").hidden = true; });
 

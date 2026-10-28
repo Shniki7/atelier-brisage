@@ -235,20 +235,22 @@
           <p class="note">La taxe est retirée de la valeur des runes, que le brisage soit estimé ou saisi à la main, et du montant proposé quand tu marques une série « Vendu ». Vérifie le taux en jeu à l'hôtel des ventes.</p>
         </div>
         <div class="panel">
-          <div class="panel-head"><h2>Prix des runes <span class="count-chip" id="cRunes">0</span></h2><span class="sub">Prix d'une rune de base (Ba)</span></div>
-          <p class="note">Les runes données par tes items suivis. « Points / rune » = ce qu'apporte une rune de base (par exemple 5 pour Vitalité). Le brisage estimé compte tout en runes de base : si tu revends surtout des Pa ou des Ra, mets leur prix divisé par 3 ou par 10.</p>
+          <div class="panel-head"><h2>Prix des runes <span class="count-chip" id="cRunes">0</span></h2><label class="chk"><input type="checkbox" id="advToggle"><span>Réglages avancés</span></label></div>
+          <p class="note"><b>Ce que tu récupères.</b> Quand tu brises un item, tu obtiens des runes. Indique ici ce que <b>tu vends une rune de base (Ba)</b> à l'HDV. L'outil s'en sert pour estimer combien rapporte le brisage de chaque item.</p>
+          <p class="note adv">Avancé : « Points / rune » = ce qu'apporte une rune de base (5 pour Vitalité). Le brisage estimé compte tout en runes de base : si tu revends surtout des Pa ou des Ra, mets leur prix divisé par 3 ou par 10.</p>
           <div class="tbl-wrap">
             <table class="t-res">
-              <thead><tr><th class="l">Rune</th><th class="l">Donnée par</th><th>Points / rune</th><th>Prix</th><th>Mis à jour</th></tr></thead>
+              <thead><tr><th class="l">Rune</th><th class="l">Donnée par</th><th class="adv">Points / rune</th><th>Prix de vente</th><th>Mis à jour</th></tr></thead>
               <tbody id="runes" data-freeze="runes"></tbody>
             </table>
           </div>
         </div>
         <div class="panel">
-          <div class="panel-head"><h2>Prix des ressources</h2><span class="sub">Un prix sert à tous les crafts qui utilisent la ressource</span></div>
+          <div class="panel-head"><h2>Prix des ressources</h2></div>
+          <p class="note"><b>Ce que tu dépenses.</b> Indique ce que <b>tu paies chaque ressource</b> à l'HDV. Un prix saisi ici sert à tous les crafts qui utilisent cette ressource. Coche « récoltée » si tu la récoltes toi-même.</p>
           <div class="tbl-wrap">
             <table class="t-res">
-              <thead><tr><th class="l">Ressource</th><th class="l">Utilisée dans</th><th class="l">Récolte</th><th>Prix unitaire</th><th>Mis à jour</th></tr></thead>
+              <thead><tr><th class="l">Ressource</th><th class="l">Utilisée dans</th><th class="l">Récolte</th><th>Prix d'achat</th><th>Mis à jour</th></tr></thead>
               <tbody id="res" data-freeze="res"></tbody>
             </table>
           </div>

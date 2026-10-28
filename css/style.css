@@ -345,6 +345,10 @@ input.grp::placeholder{color:var(--fg-2);opacity:.85}
 .hint{margin:0;font-size:13px;background:var(--accent-soft);color:var(--fg-2);border-radius:8px;padding:9px 12px}
 .hint b{color:var(--fg)}
 
+.adv{display:none}
+body.adv-on .adv{display:revert}
+body.adv-on p.adv,body.adv-on small.adv{display:block}
+
 /* ---------- lecture seule ---------- */
 body.ro .own-only{display:none!important}
 
