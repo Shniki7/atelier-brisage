@@ -133,3 +133,8 @@ scripts/maj_recettes.py    extraction des recettes
 
 - Les ventes ne sont pas récupérées depuis le jeu : Ankama ne propose pas d'accès officiel à ces données, et les outils qui lisent le trafic du jeu sont interdits. On saisit donc les ventes à la main dans le journal.
 - Les recettes dépendent du projet dofus-sqlite. S'il s'arrête, l'action échoue sans rien casser : l'outil garde les dernières recettes connues.
+
+## Données et licences
+
+- Recettes, effets et courbe d'XP des familiers : fichiers du jeu Dofus 3, via [dofus-sqlite](https://github.com/ledouxm/dofus-sqlite). Dofus est une marque d'Ankama.
+- XP des ressources pour les familiers (`data/xp-table.json`) : [Dofus Wiki – Pet experience table](https://dofuswiki.fandom.com/wiki/Pet_experience_table), sous licence [CC BY-SA](https://creativecommons.org/licenses/by-sa/3.0/). Ce fichier est redistribué sous la même licence.
