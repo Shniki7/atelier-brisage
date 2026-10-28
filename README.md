@@ -65,6 +65,30 @@ Pour retirer quelqu'un : Firebase > Firestore > `profiles` > supprime son docume
 
 ---
 
+## Comment le brisage est estimé
+
+Pour chaque effet de l'item (tiré des fichiers du jeu), l'outil prend le jet moyen et applique la formule communautaire :
+
+```
+runes de base = (jet moyen × poids de la caractéristique × niveau × 0,015 + 1) × coefficient ÷ poids d'une rune de base
+```
+
+Le poids d'une rune de base vaut « points apportés par la rune × poids de la caractéristique » (par exemple 5 points pour une rune Vitalité). La valeur du brisage est la somme des runes multipliées par leur prix, moins la taxe HDV.
+
+C'est une **estimation** : la formule n'est pas publiée par Ankama, le jet réel de ton item varie, et l'outil compte tout en runes de base. Saisis le coefficient affiché en jeu pour chaque item. Si tu connais la vraie valeur de brisage, tape-la : elle remplace l'estimation.
+
+## Raccourcis clavier
+
+| Touche | Action |
+|---|---|
+| `Tab` ou `Entrée` | Case suivante dans la même colonne |
+| `Maj` + `Tab` | Case précédente dans la même colonne |
+| `↑` `↓` | Monter ou descendre dans une colonne de nombres |
+| `1` à `5` | Changer d'onglet |
+| `/` | Chercher un item à suivre |
+| `N` | Nouvelle série dans le journal |
+| `?` | Aide des raccourcis |
+
 ## Utiliser l'outil sur ton PC
 
 Le site en ligne suffit. Si tu veux l'ouvrir en local (pour le modifier, par exemple), il faut un petit serveur, car Google refuse la connexion depuis un fichier ouvert directement :

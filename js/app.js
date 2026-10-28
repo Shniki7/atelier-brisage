@@ -30,7 +30,7 @@ let open = new Set(), tab = lsGet("tab") || "dash", rfilter = "";
 let gran = lsGet("gran") || "semaine", ggran = lsGet("ggran") || "semaine", demoOn = true, charts = {};
 const pendingPrix = new Set();
 
-function blank() { return { p: {}, prix: {}, maj: {}, suivi: [], journal: [], loaded: false }; }
+function blank() { return { p: {}, prix: {}, maj: {}, rp: {}, rm: {}, rpt: {}, rec: {}, cfg: { taxe: 2, recolte: "hdv" }, suivi: [], journal: [], loaded: false }; }
 function member(uid) { if (!MEMBERS.has(uid)) MEMBERS.set(uid, blank()); return MEMBERS.get(uid); }
 const isMe = () => VIEW === ME;
 const ro = () => !isMe();
@@ -44,15 +44,42 @@ const initials = s => (s || "?").trim().slice(0, 2).toUpperCase();
 
 // ---------------------------------------------------------------- calculs
 function recipeOf(s) { if (s.r) return s.r.map(o => [o.i, o.q]); const it = ITEMS.get(s.id); return it ? it.ing : []; }
-function costOf(s, prix = S.prix) {
+const taxe = (M = S) => Math.min(50, Math.max(0, +(M.cfg?.taxe ?? 2))) / 100;
+function unitPrice(rid, M = S) {
+  if (M.rec?.[rid] && M.cfg?.recolte === "gratuit") return 0;
+  const p = M.prix[rid]; return p > 0 ? p : null;
+}
+function costOf(s, M = S) {
   const r = recipeOf(s); let c = 0, miss = 0;
-  for (const [id, q] of r) { const p = prix[id]; if (p > 0) c += p * q; else miss++; }
+  for (const [id, q] of r) { const p = unitPrice(id, M); if (p == null) miss++; else c += p * q; }
   return { cost: c, miss };
 }
-function statsOf(s, prix = S.prix) {
-  const { cost, miss } = costOf(s, prix); const brk = +s.brk || 0;
+// Estimation du brisage (formule communautaire) :
+// runes de base = (jet moyen × poids de la carac × niveau × 0,015 + 1) × coefficient ÷ poids d'une rune de base
+// poids d'une rune de base = points apportés par la rune × poids de la carac
+function runeLines(s, M = S) {
+  const it = ITEMS.get(s.id), fx = D.fx?.[s.id]; if (!it || !fx) return [];
+  const coef = Math.max(0, +(s.coef ?? 100) || 0) / 100;
+  return fx.map(([a, lo, hi]) => {
+    const st = D.stats[a]; if (!st) return null;
+    const [nom, poids, ptsDef] = st; const pts = +M.rpt?.[a] || ptsDef;
+    const jet = (lo + hi) / 2;
+    const runes = (jet * poids * it.l * 0.015 + 1) * coef / (pts * poids);
+    const prix = M.rp?.[a] > 0 ? +M.rp[a] : null;
+    return { a, nom, lo, hi, jet, pts, runes, prix, val: prix != null ? runes * prix : null };
+  }).filter(Boolean);
+}
+function estBrk(s, M = S) {
+  const L = runeLines(s, M); if (!L.length) return { val: null, miss: 0, none: true, lines: L };
+  const miss = L.filter(l => l.prix == null).length;
+  return { val: miss ? null : L.reduce((a, l) => a + l.val, 0), miss, lines: L };
+}
+function statsOf(s, M = S) {
+  const { cost, miss } = costOf(s, M); const est = estBrk(s, M);
+  const manual = +s.brk || 0; const gross = manual > 0 ? manual : (est.val || 0);
+  const brk = gross * (1 - taxe(M)); const src = manual > 0 ? "manuel" : est.val ? "estimé" : null;
   const ok = !miss && cost > 0 && brk > 0;
-  return { cost, miss, brk, ok, benef: ok ? brk - cost : null, roi: ok ? (brk - cost) / cost : null };
+  return { cost, miss, brk, gross, src, est, ok, benef: ok ? brk - cost : null, roi: ok ? (brk - cost) / cost : null };
 }
 const pillCls = r => r == null ? "p-na" : r < 0 ? "p-neg" : r >= 1.5 ? "p-great" : r >= .6 ? "p-ok" : "p-low";
 const pillTxt = r => (r >= 0 ? "+" : "") + Math.round(r * 100) + " %";
@@ -142,9 +169,16 @@ function subscribeMember(uid) {
   const m = member(uid); if (m.subscribed) return; m.subscribed = true;
   const base = db.doc(`profiles/${uid}`);
   unsubs.push(base.collection("data").doc("prix").onSnapshot(snap => {
-    const d = snap.data() || {}; const p = { ...(d.p || {}) }, mj = { ...(d.m || {}) };
-    if (uid === ME) for (const rid of pendingPrix) { if (m.prix[rid] > 0) p[rid] = m.prix[rid]; else delete p[rid]; mj[rid] = m.maj[rid]; }
-    m.prix = p; m.maj = mj; m.loaded = true; render();
+    const d = snap.data() || {};
+    const nx = { prix: { ...(d.p || {}) }, maj: { ...(d.m || {}) }, rp: { ...(d.rp || {}) }, rm: { ...(d.rm || {}) }, rpt: { ...(d.rpt || {}) }, rec: { ...(d.r || {}) }, cfg: { taxe: 2, recolte: "hdv", ...(d.cfg || {}) } };
+    if (uid === ME) for (const k of pendingPrix) {           // garder les saisies pas encore enregistrées
+      const [f, id] = k.split(":");
+      if (f === "cfg") { nx.cfg = { ...m.cfg }; continue; }
+      const date = f === "prix" ? "maj" : f === "rp" ? "rm" : null;
+      if (m[f][id] != null && m[f][id] !== false && m[f][id] !== 0) nx[f][id] = m[f][id]; else delete nx[f][id];
+      if (date) nx[date][id] = m[date][id];
+    }
+    Object.assign(m, nx); m.loaded = true; render();
   }, onErr));
   unsubs.push(base.collection("data").doc("suivi").onSnapshot(snap => {
     if (uid === ME && timers.suivi) return; // modification locale en attente d'enregistrement
@@ -171,7 +205,7 @@ function showError(msg) {
   b.querySelector("button").onclick = () => b.remove();
 }
 const Store = {
-  savePrix() { if (!isMe()) return; pendingPrix.clear(); db.doc(`profiles/${ME}/data/prix`).set({ p: { ...S.prix }, m: { ...S.maj } }).catch(fail); },
+  savePrix() { if (!isMe()) return; pendingPrix.clear(); db.doc(`profiles/${ME}/data/prix`).set({ p: { ...S.prix }, m: { ...S.maj }, rp: { ...S.rp }, rm: { ...S.rm }, rpt: { ...S.rpt }, r: { ...S.rec }, cfg: { ...S.cfg } }).catch(fail); },
   saveSuivi() { if (!isMe()) return; timers.suivi = null; db.doc(`profiles/${ME}/data/suivi`).set({ items: S.suivi.map(x => ({ ...x })) }).catch(fail); },
   addJr(e) { if (!isMe()) return; db.collection(`profiles/${ME}/journal`).add(e).catch(fail); },
   updJr(id, patch) { if (!isMe()) return; db.doc(`profiles/${ME}/journal/${id}`).update(patch).catch(fail); },
@@ -242,7 +276,7 @@ function render() {
 }
 function applyRO() {
   const r = ro();
-  document.querySelectorAll("#v-crafts input, #v-crafts select, #v-res input, #v-jr input, #v-jr select").forEach(x => { if (!x.classList.contains("keep")) x.disabled = r; });
+  document.querySelectorAll("#v-crafts input, #v-crafts select, #v-res input, #v-res select, #v-jr input, #v-jr select").forEach(x => { if (!x.classList.contains("keep")) x.disabled = r; });
   document.querySelectorAll("#v-crafts .x, #v-jr .x, [data-rreset]").forEach(x => x.hidden = r);
 }
 function keepFocus(fn) {
@@ -250,36 +284,62 @@ function keepFocus(fn) {
   if (id) { const el = document.getElementById(id); if (el && el !== a) { el.focus(); try { if (ss != null && el.type !== "number") el.setSelectionRange(ss, ss); } catch (e) { } } }
 }
 
+// ----- ordre des lignes figé pendant la saisie (sinon Tab sauterait de ligne en ligne au gré du tri)
+const frozen = {};
+function stableOrder(key, rows, idOf, cmp) {
+  const editing = document.activeElement && document.activeElement.closest?.(`[data-freeze="${key}"]`) && document.activeElement.matches("input,select");
+  if (editing && frozen[key]) {
+    const pos = new Map(frozen[key].map((id, i) => [id, i]));
+    rows.sort((a, b) => (pos.get(idOf(a)) ?? 1e9) - (pos.get(idOf(b)) ?? 1e9));
+  } else rows.sort(cmp);
+  frozen[key] = rows.map(idOf);
+  return rows;
+}
+
 // ----- Crafts suivis
 function renderCrafts() {
-  const rows = S.suivi.map(s => ({ s, it: ITEMS.get(s.id), ...statsOf(s) })).sort((a, b) => (b.roi ?? -1e9) - (a.roi ?? -1e9));
+  const rows = stableOrder("crafts", S.suivi.map(s => ({ s, it: ITEMS.get(s.id), ...statsOf(s) })), r => r.s.id, (a, b) => (b.roi ?? -1e9) - (a.roi ?? -1e9));
+  const tx = taxe();
   keepFocus(() => {
     $("#crafts").innerHTML = rows.length ? rows.map(r => {
       const nm = r.it ? r.it.n : "Item retiré du jeu", isOpen = open.has(r.s.id);
-      const roiCell = r.ok ? `<span class="pill ${pillCls(r.roi)}">${pillTxt(r.roi)}</span>` :
-        `<span class="pill p-na">${r.miss ? r.miss + " prix manquant" + (r.miss > 1 ? "s" : "") : "brisage à remplir"}</span>`;
+      const why = r.miss ? `${r.miss} prix de ressource${r.miss > 1 ? "s" : ""}` : !r.brk ? (r.est.none ? "brisage à saisir" : `${r.est.miss} prix de rune${r.est.miss > 1 ? "s" : ""}`) : "";
+      const roiCell = r.ok ? `<span class="pill ${pillCls(r.roi)}">${pillTxt(r.roi)}</span>` : `<span class="pill p-na" title="Il manque : ${why}">${why}</span>`;
+      const ph = r.est.val ? "≈ " + fmt(r.est.val) : "kamas";
       let html = `<tr class="item ${isOpen ? "open" : ""}" data-id="${r.s.id}">
-        <td class="l"><div class="iname"><span class="chev">›</span> ${esc(nm)}<small>${r.it ? `Niv. ${r.it.l} · ${esc(D.types[r.it.t] || "")} · ${esc(r.it.j)}` : ""}${r.s.r ? " · recette modifiée" : ""}</small></div></td>
-        <td class="m">${r.miss ? `<span class="neg" title="Coût partiel">≥ ${fmt(r.cost)}</span>` : fmt(r.cost)}</td>
-        <td><input class="num brk-in" id="brk-${r.s.id}" data-brk="${r.s.id}" type="number" min="0" value="${r.s.brk || ""}" placeholder="kamas" aria-label="Valeur de brisage de ${esc(nm)}"></td>
-        <td class="m ${r.benef < 0 ? "neg" : ""}">${r.ok ? fmt(r.benef) : "–"}</td>
+        <td class="l"><div class="iname"><span class="chev">›</span><span>${esc(nm)}<small>${r.it ? `Niv. ${r.it.l} · ${esc(D.types[r.it.t] || "")} · ${esc(r.it.j)}` : ""}${r.s.r ? " · recette modifiée" : ""}</small></span></div></td>
+        <td class="m">${r.miss ? (r.cost ? `<span class="neg" title="Coût partiel : prix manquants">≥ ${fmt(r.cost)}</span>` : `<span class="note">–</span>`) : fmt(r.cost)}</td>
+        <td><input class="num coef-in" id="coef-${r.s.id}" data-coef="${r.s.id}" data-col="coef" type="number" min="1" max="4000" value="${r.s.coef ?? 100}" aria-label="Coefficient de brisage de ${esc(nm)} en %"></td>
+        <td><input class="num brk-in" id="brk-${r.s.id}" data-brk="${r.s.id}" data-col="brk" type="number" min="0" value="${r.s.brk || ""}" placeholder="${ph}" aria-label="Valeur de brisage de ${esc(nm)}" title="${r.src === "estimé" ? "Estimé à partir des prix des runes. Saisis une valeur pour la remplacer." : r.src === "manuel" ? "Valeur saisie à la main. Efface-la pour revenir à l'estimation." : "Renseigne les prix des runes ou saisis une valeur."}">
+          <small class="note src">${r.src ? r.src + (tx ? ` · net ${fmt(r.brk)}` : "") : ""}</small></td>
+        <td class="m ${r.benef < 0 ? "neg" : r.benef > 0 ? "pos" : ""}">${r.ok ? fmt(r.benef) : "–"}</td>
         <td>${roiCell}</td>
-        <td><button class="ghost x" data-del="${r.s.id}" title="Retirer de la liste" aria-label="Retirer ${esc(nm)}">×</button></td></tr>`;
+        <td class="acts"><button class="ghost own-only" data-serie="${r.s.id}" title="Ajouter une série de cet item au journal (raccourci : S sur la ligne)">+ Série</button><button class="ghost x" data-del="${r.s.id}" title="Retirer de la liste" aria-label="Retirer ${esc(nm)}">×</button></td></tr>`;
       if (isOpen) {
         const rec = recipeOf(r.s);
-        html += `<tr class="detail"><td colspan="6"><div class="recipe">
+        html += `<tr class="detail"><td colspan="7"><div class="detail-grid">
+          <div class="recipe">
           <div class="rrow rhead"><span>Ressource</span><span style="text-align:right">Qté</span><span style="text-align:right">Prix unitaire</span><span style="text-align:right">Sous-total</span><span></span></div>
-          ${rec.map(([rid, q], k) => { const p = S.prix[rid]; return `<div class="rrow">
-            <span class="rn">${esc(D.res[rid] || "Ressource " + rid)}</span>
-            <input class="num" id="q-${r.s.id}-${rid}" data-rq="${r.s.id}" data-k="${k}" type="number" min="1" value="${q}" aria-label="Quantité">
-            <input class="num ${p > 0 ? "" : "miss"}" id="p-${r.s.id}-${rid}" data-price="${rid}" type="number" min="0" value="${p || ""}" placeholder="prix" aria-label="Prix de ${esc(D.res[rid] || "")}">
-            <span class="st">${p > 0 ? fmt(p * q) : "–"}</span>
+          ${rec.map(([rid, q], k) => { const p = S.prix[rid], u = unitPrice(rid); const free = S.rec[rid] && S.cfg.recolte === "gratuit"; return `<div class="rrow">
+            <span class="rn">${esc(D.res[rid] || "Ressource " + rid)}${S.rec[rid] ? ' <span class="tag">récoltée</span>' : ""}</span>
+            <input class="num" id="q-${r.s.id}-${rid}" data-rq="${r.s.id}" data-k="${k}" data-col="rq-${r.s.id}" type="number" min="1" value="${q}" aria-label="Quantité">
+            <input class="num ${p > 0 || free ? "" : "miss"}" id="p-${r.s.id}-${rid}" data-price="${rid}" data-col="pp-${r.s.id}" type="number" min="0" value="${p || ""}" placeholder="${free ? "0 (récoltée)" : "prix"}" aria-label="Prix de ${esc(D.res[rid] || "")}">
+            <span class="st">${u != null ? fmt(u * q) : "–"}</span>
             <button class="ghost x" data-rdel="${r.s.id}" data-k="${k}" aria-label="Retirer l'ingrédient" title="Retirer l'ingrédient">×</button></div>`; }).join("")}
-          <div class="rfoot"><span class="note">Total : <b style="font-family:var(--mono)">${fmt(r.cost)}</b>${r.miss ? ` (${r.miss} prix manquant${r.miss > 1 ? "s" : ""})` : ""}</span>
-            ${r.s.r ? `<button class="ghost" data-rreset="${r.s.id}">Revenir à la recette du jeu</button>` : ""}</div></div></td></tr>`;
+          <div class="rfoot"><span class="note">Coût : <b class="mono">${fmt(r.cost)}</b>${r.miss ? ` (${r.miss} prix manquant${r.miss > 1 ? "s" : ""})` : ""}</span>
+            ${r.s.r ? `<button class="ghost" data-rreset="${r.s.id}">Revenir à la recette du jeu</button>` : ""}</div></div>
+          ${r.est.lines.length ? `<div class="recipe">
+            <div class="rrow runes rhead"><span>Rune obtenue (jet moyen)</span><span style="text-align:right">Runes</span><span style="text-align:right">Prix rune</span><span style="text-align:right">Valeur</span></div>
+            ${r.est.lines.map(l => `<div class="rrow runes"><span class="rn">${esc(l.nom)} <span class="note">${l.lo === l.hi ? l.lo : l.lo + "–" + l.hi}${l.pts > 1 ? ` · ${l.pts} pts/rune` : ""}</span></span>
+              <span class="st">${l.runes.toLocaleString("fr-FR", { maximumFractionDigits: 1 })}</span>
+              <input class="num ${l.prix ? "" : "miss"}" id="rup-${r.s.id}-${l.a}" data-runep="${l.a}" data-col="rup-${r.s.id}" type="number" min="0" value="${l.prix || ""}" placeholder="prix" aria-label="Prix de la rune ${esc(l.nom)}">
+              <span class="st">${l.val != null ? fmt(l.val) : "–"}</span></div>`).join("")}
+            <div class="rfoot"><span class="note">Brisage estimé : <b class="mono">${r.est.val ? fmt(r.est.val) : "–"}</b> au coefficient ${r.s.coef ?? 100} %${tx ? `, soit ${fmt((r.est.val || 0) * (1 - tx))} après ${Math.round(tx * 1000) / 10} % de taxe` : ""}.</span></div>
+          </div>` : `<p class="note">Pas d'effets connus pour cet item : saisis sa valeur de brisage à la main.</p>`}
+          </div></td></tr>`;
       }
       return html;
-    }).join("") : `<tr><td colspan="6" class="empty">${isMe() ? "Aucun item suivi. Cherche un item ci-dessus pour l'ajouter." : "Ce membre ne suit encore aucun item."}</td></tr>`;
+    }).join("") : `<tr><td colspan="7" class="empty">${isMe() ? "Aucun item suivi. Cherche un item ci-dessus pour l'ajouter (raccourci : /)." : "Ce membre ne suit encore aucun item."}</td></tr>`;
   });
   renderPlan(rows);
 }
@@ -289,28 +349,44 @@ function renderPlan(rows) {
   const plan = []; let inv = 0, ben = 0;
   for (const r of cands) { const q = Math.min(maxq, Math.floor(budget / r.cost)); if (q <= 0) continue; plan.push({ ...r, q }); budget -= q * r.cost; inv += q * r.cost; ben += q * r.benef; }
   $("#plan").innerHTML = plan.length ? plan.map(p => `<li><span class="qty">${p.q}×</span><span>${esc(p.it.n)}<br><small class="note">${fmt(p.cost)} pièce · ${pillTxt(p.roi)}</small></span><span class="pf">+${fmt(p.q * p.benef)}</span></li>`).join("")
-    : `<li class="empty">${cands.length ? "Budget trop faible pour le moins cher des crafts rentables." : "Renseigne les prix des ressources et le brisage estimé pour obtenir un plan."}</li>`;
+    : `<li class="empty">${cands.length ? "Budget trop faible pour le moins cher des crafts rentables." : "Renseigne les prix des ressources et des runes pour obtenir un plan."}</li>`;
   $("#tInv").textContent = fmt(inv); $("#tBen").textContent = fmt(ben);
 }
 
-// ----- Ressources
+// ----- Ressources et runes
 function neededRes() {
   const m = new Map();
   for (const s of S.suivi) { const it = ITEMS.get(s.id); for (const [rid] of recipeOf(s)) { if (!m.has(rid)) m.set(rid, []); m.get(rid).push(it ? it.n : "?"); } }
   return [...m.entries()];
 }
+function neededRunes() {
+  const m = new Map();
+  for (const s of S.suivi) { const it = ITEMS.get(s.id); for (const [a] of D.fx?.[s.id] || []) { if (!D.stats[a]) continue; if (!m.has(a)) m.set(a, []); m.get(a).push(it ? it.n : "?"); } }
+  return [...m.entries()];
+}
 function renderRes() {
   const f = norm(rfilter);
-  const list = neededRes().map(([rid, its]) => ({ rid, its, n: D.res[rid] || "Ressource " + rid }))
-    .filter(x => !f || norm(x.n).includes(f))
-    .sort((a, b) => ((S.prix[a.rid] > 0) - (S.prix[b.rid] > 0)) || a.n.localeCompare(b.n, "fr"));
+  $("#cfgTaxe").value = S.cfg.taxe ?? 2; $("#cfgRecolte").value = S.cfg.recolte || "hdv";
+  const runes = stableOrder("runes", neededRunes().map(([a, its]) => ({ a, its, st: D.stats[a] })).filter(x => !f || norm(x.st[0]).includes(f)), x => x.a,
+    (x, y) => ((S.rp[x.a] > 0) - (S.rp[y.a] > 0)) || x.st[0].localeCompare(y.st[0], "fr"));
+  const list = stableOrder("res", neededRes().map(([rid, its]) => ({ rid, its, n: D.res[rid] || "Ressource " + rid })).filter(x => !f || norm(x.n).includes(f)), x => x.rid,
+    (a, b) => ((unitPrice(a.rid) != null) - (unitPrice(b.rid) != null)) || a.n.localeCompare(b.n, "fr"));
   keepFocus(() => {
-    $("#res").innerHTML = list.length ? list.map(x => { const p = S.prix[x.rid]; return `<tr>
+    $("#runes").innerHTML = runes.length ? runes.map(x => { const p = S.rp[x.a]; return `<tr>
+      <td class="l"><b>Rune ${esc(x.st[0])}</b><small class="note" style="display:block">poids ${x.st[1]}</small></td>
+      <td class="l note">${esc([...new Set(x.its)].slice(0, 4).join(", "))}${new Set(x.its).size > 4 ? "…" : ""}</td>
+      <td><input class="num" id="rpt-${x.a}" data-runepts="${x.a}" data-col="rpt" type="number" min="1" value="${S.rpt[x.a] || x.st[2]}" aria-label="Points apportés par une rune ${esc(x.st[0])}" style="width:80px"></td>
+      <td><input class="num ${p > 0 ? "" : "miss"}" id="rup-${x.a}" data-runep="${x.a}" data-col="rup" type="number" min="0" value="${p || ""}" placeholder="prix" aria-label="Prix de la rune ${esc(x.st[0])}"></td>
+      <td class="m note">${fdate(S.rm[x.a])}</td></tr>`; }).join("")
+      : `<tr><td colspan="5" class="empty">${S.suivi.length ? "Aucune rune ne correspond au filtre." : "Ajoute des items dans « Crafts suivis » pour voir les runes qu'ils donnent."}</td></tr>`;
+    $("#res").innerHTML = list.length ? list.map(x => { const p = S.prix[x.rid], rc = !!S.rec[x.rid], free = rc && S.cfg.recolte === "gratuit"; return `<tr>
       <td class="l"><b>${esc(x.n)}</b></td><td class="l note">${esc([...new Set(x.its)].join(", "))}</td>
-      <td><input class="num ${p > 0 ? "" : "miss"}" id="rp-${x.rid}" data-price="${x.rid}" type="number" min="0" value="${p || ""}" placeholder="prix" aria-label="Prix de ${esc(x.n)}"></td>
+      <td><label class="chk"><input type="checkbox" id="rec-${x.rid}" data-rec="${x.rid}" ${rc ? "checked" : ""} aria-label="Je récolte ${esc(x.n)}"><span>récoltée</span></label></td>
+      <td><input class="num ${p > 0 || free ? "" : "miss"}" id="rp-${x.rid}" data-price="${x.rid}" data-col="rp" type="number" min="0" value="${p || ""}" placeholder="${free ? "0 (récoltée)" : "prix"}" aria-label="Prix de ${esc(x.n)}"></td>
       <td class="m note">${fdate(S.maj[x.rid])}</td></tr>`; }).join("")
-      : `<tr><td colspan="4" class="empty">${S.suivi.length ? "Aucune ressource ne correspond au filtre." : "Ajoute des items dans « Crafts suivis » pour voir les ressources à acheter."}</td></tr>`;
+      : `<tr><td colspan="5" class="empty">${S.suivi.length ? "Aucune ressource ne correspond au filtre." : "Ajoute des items dans « Crafts suivis » pour voir les ressources à acheter."}</td></tr>`;
   });
+  $("#cRunes").textContent = runes.length;
 }
 
 // ----- Journal
@@ -325,14 +401,14 @@ function renderJr() {
     $("#jr").innerHTML = J.length ? J.map(e => {
       const R = realize(e), ben = R ? R.ventes - (+e.cout || 0) : null, roi = R && e.cout > 0 ? ben / e.cout : null;
       const st = +e.encaisse > 0 ? ["s-done", "Vendu"] : +e.runes > 0 ? ["s-brk", "Brisé"] : ["s-run", "En stock"];
-      const inp = (f, type, w, extra = "") => `<td style="width:${w}px"><input ${type === "date" ? "" : 'class="num"'} id="j${f}-${e._id}" data-j="${e._id}" data-f="${f}" type="${type}" ${type === "number" ? 'min="0"' : ""} value="${esc(e[f] || "")}" ${extra}></td>`;
+      const inp = (f, type, w, extra = "") => `<td style="width:${w}px"><input ${type === "date" ? "" : 'class="num"'} id="j${f}-${e._id}" data-j="${e._id}" data-f="${f}" data-col="j-${f}" type="${type}" ${type === "number" ? 'min="0"' : ""} value="${esc(e[f] || "")}" ${extra}></td>`;
       return `<tr><td class="l"><b>${esc(e.nom)}</b></td>
         ${inp("qte", "number", 64, 'aria-label="Quantité"')}${inp("achat", "date", 138, 'aria-label="Date d\'achat"')}${inp("cout", "number", 104, 'aria-label="Coût total"')}
         ${inp("brisage", "date", 138, 'aria-label="Date de brisage"')}${inp("runes", "number", 104, 'placeholder="kamas" aria-label="Valeur des runes"')}
         ${inp("vente", "date", 138, 'aria-label="Date de vente"')}${inp("encaisse", "number", 104, 'placeholder="kamas" aria-label="Kamas encaissés"')}
         <td class="m ${ben < 0 ? "neg" : ben > 0 ? "pos" : ""}">${R ? fmt(ben) : "–"}</td>
         <td>${roi != null ? `<span class="pill ${pillCls(roi)}">${pillTxt(roi)}</span>` : ""}</td>
-        <td class="l"><span class="status ${st[0]}">${st[1]}</span></td>
+        <td class="l"><span class="status ${st[0]}">${st[1]}</span>${!(+e.encaisse > 0) ? ` <button class="quick own-only" data-quick="${+e.runes > 0 ? "vendu" : "brise"}" data-jid="${e._id}" title="${+e.runes > 0 ? "Marquer vendu aujourd'hui (raccourci : V)" : "Marquer brisé aujourd'hui (raccourci : B)"}">${+e.runes > 0 ? "Vendu" : "Brisé"}</button>` : ""}</td>
         <td><button class="ghost x" data-jdel="${e._id}" aria-label="Supprimer la ligne" title="Supprimer">×</button></td></tr>`;
     }).join("") : `<tr><td colspan="12" class="empty">${isMe() ? "Aucune série enregistrée. Ajoute ton premier achat ci-dessus." : "Ce membre n'a encore enregistré aucune série."}</td></tr>`;
   });
@@ -490,6 +566,8 @@ function renderAlerts(J) {
     const e = est.get(o.item); if (e != null && o.n >= 2 && e - o.roi > .4) A.push(["c-warn", "Écart", `${o.k} rapporte ${pillTxt(o.roi)} en réel contre ${pillTxt(e)} estimé. Mets à jour sa valeur de brisage.`]);
   }
   const old = new Set(); for (const s of S.suivi) for (const [rid] of recipeOf(s)) { const m = S.maj[rid]; if (!(S.prix[rid] > 0) || !m || days(m) > 7) old.add(rid); }
+  const oldR = new Set(); for (const s of S.suivi) for (const [a] of D.fx?.[s.id] || []) { const m = S.rm[a]; if (!(S.rp[a] > 0) || !m || days(m) > 7) oldR.add(a); }
+  if (oldR.size && !S.suivi.every(s => +s.brk > 0)) A.push(["c-info", "Runes", `${oldR.size} ${pl(oldR.size, "prix de rune manque ou date", "prix de runes manquent ou datent")} de plus de 7 jours : les brisages estimés en dépendent.`]);
   if (old.size) A.push(["c-info", "Prix", `${old.size} ${pl(old.size, "prix de ressource manque ou date", "prix de ressources manquent ou datent")} de plus de 7 jours. Les estimations en dépendent.`]);
   const recent = new Set(J.filter(e => days(e.achat) <= 14).map(e => e.item));
   const best = S.suivi.map(s => ({ s, ...statsOf(s) })).filter(x => x.ok && x.roi > 0 && !recent.has(x.s.id)).sort((a, b) => b.roi - a.roi)[0];
@@ -581,20 +659,27 @@ $("#qres").addEventListener("mousedown", e => { const li = e.target.closest("[da
 $("#q").addEventListener("blur", () => setTimeout(() => $("#qres").hidden = true, 120));
 
 // ---------------------------------------------------------------- saisie
-let softT; function softCrafts() { clearTimeout(softT); softT = setTimeout(() => { if (tab === "crafts") renderCrafts(); applyRO(); }, 350); }
+let softT; function softCrafts() { clearTimeout(softT); softT = setTimeout(() => { if (tab === "crafts") { renderCrafts(); applyRO(); } }, 450); }
 function setPrice(rid, v) {
-  pendingPrix.add(String(rid)); const n = +v || 0;
+  pendingPrix.add("prix:" + rid); const n = +v || 0;
   if (n > 0) S.prix[rid] = n; else delete S.prix[rid]; S.maj[rid] = today();
   later("prix", () => Store.savePrix());
 }
+function setRuneP(a, v) { pendingPrix.add("rp:" + a); const n = +v || 0; if (n > 0) S.rp[a] = n; else delete S.rp[a]; S.rm[a] = today(); later("prix", () => Store.savePrix()); }
+function setRunePts(a, v) { pendingPrix.add("rpt:" + a); const n = Math.max(1, Math.round(+v || 0)); if (n !== D.stats[a]?.[2]) S.rpt[a] = n; else delete S.rpt[a]; later("prix", () => Store.savePrix()); }
+function setCfg(k, v) { pendingPrix.add("cfg:"); S.cfg = { ...S.cfg, [k]: v }; later("prix", () => Store.savePrix()); }
 document.addEventListener("input", e => {
   const t = e.target;
   if (t.id === "budget" || t.id === "maxq") { renderCrafts(); applyRO(); return; }
   if (t.id === "rq") { rfilter = t.value; renderRes(); applyRO(); return; }
   if (!isMe()) return;
   if (t.dataset.price) { setPrice(t.dataset.price, t.value); t.classList.toggle("miss", !(+t.value > 0)); if (tab === "crafts") softCrafts(); return; }
-  if (t.dataset.brk) { const s = S.suivi.find(x => x.id === +t.dataset.brk); s.brk = +t.value || 0; clearTimeout(timers.suivi); saveSuiviLater(); softCrafts(); return; }
-  if (t.dataset.rq) { const s = S.suivi.find(x => x.id === +t.dataset.rq); if (!s.r) s.r = recipeOf(s).map(([i, q]) => ({ i, q })); s.r[+t.dataset.k].q = Math.max(1, +t.value || 1); clearTimeout(timers.suivi); saveSuiviLater(); softCrafts(); return; }
+  if (t.dataset.runep) { setRuneP(t.dataset.runep, t.value); t.classList.toggle("miss", !(+t.value > 0)); if (tab === "crafts") softCrafts(); return; }
+  if (t.dataset.runepts) { setRunePts(t.dataset.runepts, t.value); return; }
+  if (t.dataset.coef) { const s = S.suivi.find(x => x.id === +t.dataset.coef); s.coef = Math.max(1, +t.value || 100); saveSuiviLater(); softCrafts(); return; }
+  if (t.id === "cfgTaxe") { setCfg("taxe", Math.min(50, Math.max(0, +t.value || 0))); return; }
+  if (t.dataset.brk) { const s = S.suivi.find(x => x.id === +t.dataset.brk); s.brk = +t.value || 0; saveSuiviLater(); softCrafts(); return; }
+  if (t.dataset.rq) { const s = S.suivi.find(x => x.id === +t.dataset.rq); if (!s.r) s.r = recipeOf(s).map(([i, q]) => ({ i, q })); s.r[+t.dataset.k].q = Math.max(1, +t.value || 1); saveSuiviLater(); softCrafts(); return; }
   if (t.dataset.j) {
     const f = t.dataset.f; const v = (f === "achat" || f === "brisage" || f === "vente") ? t.value : (+t.value || 0);
     const e0 = S.journal.find(j => j._id === t.dataset.j); if (e0) e0[f] = v;
@@ -605,7 +690,9 @@ document.addEventListener("input", e => {
 });
 document.addEventListener("change", e => {
   const t = e.target;
-  if (t.dataset.price || t.dataset.brk || t.dataset.rq) render();
+  if (t.dataset.price || t.dataset.brk || t.dataset.rq || t.dataset.runep || t.dataset.runepts || t.dataset.coef || t.id === "cfgTaxe") render();
+  if (t.dataset.rec && isMe()) { pendingPrix.add("rec:" + t.dataset.rec); if (t.checked) S.rec[t.dataset.rec] = true; else delete S.rec[t.dataset.rec]; Store.savePrix(); render(); }
+  if (t.id === "cfgRecolte" && isMe()) { setCfg("recolte", t.value); Store.savePrix(); render(); }
   if (t.dataset.j) { renderJr(); applyRO(); }
   if (t.id === "jItem") { delete $("#jCost").dataset.touched; prefillCost(); }
 });
@@ -617,6 +704,7 @@ $("#crafts").addEventListener("click", e => {
   if (rd) { if (!isMe()) return; const s = S.suivi.find(x => x.id === +rd.dataset.rdel); if (!s.r) s.r = recipeOf(s).map(([i, q]) => ({ i, q })); s.r.splice(+rd.dataset.k, 1); Store.saveSuivi(); render(); return; }
   const rr = t.closest("[data-rreset]");
   if (rr) { if (!isMe()) return; const s = S.suivi.find(x => x.id === +rr.dataset.rreset); delete s.r; Store.saveSuivi(); render(); toast("Recette du jeu restaurée"); return; }
+  const sb = t.closest("[data-serie]"); if (sb) { quickSerie(+sb.dataset.serie); return; }
   const tr = t.closest("tr.item"); if (tr) { const id = +tr.dataset.id; open.has(id) ? open.delete(id) : open.add(id); renderCrafts(); applyRO(); }
 });
 function jErr(m) { let el = $("#jErr"); if (!el) { el = document.createElement("p"); el.id = "jErr"; el.className = "err"; el.setAttribute("role", "alert"); $("#jform").after(el); } el.textContent = m; el.hidden = !m; }
@@ -629,6 +717,7 @@ $("#jform").addEventListener("submit", e => {
   delete $("#jCost").dataset.touched; $("#jQty").value = 1; prefillCost(); toast("Série ajoutée au journal");
 });
 $("#jr").addEventListener("click", e => {
+  const q = e.target.closest("[data-quick]"); if (q && isMe()) { quickJr(q.dataset.jid, q.dataset.quick); return; }
   const b = e.target.closest("[data-jdel]"); if (!b || !isMe()) return;
   if (b.dataset.armed) { Store.delJr(b.dataset.jdel); toast("Ligne supprimée"); return; }
   b.dataset.armed = "1"; b.textContent = "Supprimer ?"; b.style.color = "var(--bad)";
@@ -642,7 +731,7 @@ $("#btnData").addEventListener("click", () => { $("#dataPanel").hidden = !$("#da
 $("#btnDataClose").addEventListener("click", () => { $("#dataPanel").hidden = true; });
 $("#btnExport").addEventListener("click", () => {
   const me = member(ME);
-  const data = { format: "atelier-brisage", version: 1, exporte: new Date().toISOString(), pseudo: MYPROFILE.pseudo, suivi: me.suivi, prix: { p: me.prix, m: me.maj }, journal: me.journal.map(({ _id, ...e }) => e) };
+  const data = { format: "atelier-brisage", version: 1, exporte: new Date().toISOString(), pseudo: MYPROFILE.pseudo, suivi: me.suivi, prix: { p: me.prix, m: me.maj, rp: me.rp, rm: me.rm, rpt: me.rpt, r: me.rec, cfg: me.cfg }, journal: me.journal.map(({ _id, ...e }) => e) };
   const a = document.createElement("a"); a.href = URL.createObjectURL(new Blob([JSON.stringify(data, null, 1)], { type: "application/json" }));
   a.download = `atelier-brisage-${MYPROFILE.pseudo}-${today()}.json`; document.body.appendChild(a); a.click(); a.remove();
   toast("Fichier exporté");
@@ -657,7 +746,7 @@ async function importData(d) {
     if (d.format !== "atelier-brisage") throw new Error("format");
     const me = member(ME); let ni = 0, nj = 0;
     for (const s of d.suivi || []) { if (!me.suivi.some(x => x.id === s.id)) { me.suivi.push({ ...s }); ni++; } }
-    if (d.prix?.p) { Object.assign(me.prix, d.prix.p); Object.assign(me.maj, d.prix.m || {}); }
+    if (d.prix?.p) { Object.assign(me.prix, d.prix.p); Object.assign(me.maj, d.prix.m || {}); Object.assign(me.rp, d.prix.rp || {}); Object.assign(me.rm, d.prix.rm || {}); Object.assign(me.rpt, d.prix.rpt || {}); Object.assign(me.rec, d.prix.r || {}); if (d.prix.cfg) me.cfg = { ...me.cfg, ...d.prix.cfg }; }
     const wasView = VIEW; VIEW = ME; S = me;
     Store.saveSuivi(); Store.savePrix();
     const batch = db.batch();
@@ -666,6 +755,65 @@ async function importData(d) {
     VIEW = wasView; S = member(VIEW); render();
     toast(`Import terminé : ${ni} item(s), ${nj} série(s)`);
 }
+
+// ---------------------------------------------------------------- saisie rapide
+function quickSerie(id) {
+  if (!isMe()) return; const s = S.suivi.find(x => x.id === id); const it = ITEMS.get(id); if (!s || !it) return;
+  const c = costOf(s);
+  Store.addJr({ item: id, nom: it.n, qte: 1, cout: c.miss ? 0 : Math.round(c.cost), achat: today(), brisage: "", runes: 0, vente: "", encaisse: 0 });
+  toast(c.miss ? `Série de ${it.n} ajoutée : complète son coût dans le journal` : `Série de ${it.n} ajoutée au journal (${fmt(c.cost)})`);
+}
+function quickJr(jid, kind) {
+  const e = S.journal.find(j => j._id === jid); if (!e) return;
+  if (kind === "brise") {
+    const s = S.suivi.find(x => x.id === e.item); const st = s ? statsOf(s) : null;
+    const runes = st && st.gross ? Math.round(st.gross * (e.qte || 1)) : 0;
+    const patch = { brisage: today(), ...(runes ? { runes } : {}) }; Object.assign(e, patch); Store.updJr(jid, patch); renderJr(); applyRO();
+    if (!runes) { const el = document.getElementById("jruns-" + jid) || document.getElementById("jrunes-" + jid); el?.focus(); toast("Brisé aujourd'hui : saisis la valeur des runes"); }
+    else toast(`Brisé aujourd'hui · runes estimées ${fmt(runes)}`);
+  } else {
+    const enc = Math.round((+e.runes || 0) * (1 - taxe()));
+    const patch = { vente: today(), encaisse: enc }; Object.assign(e, patch); Store.updJr(jid, patch); renderJr(); applyRO();
+    const el = document.getElementById("jencaisse-" + jid); el?.focus(); el?.select();
+    toast(`Vendu aujourd'hui · ${fmt(enc)} encaissés (taxe déduite). Corrige si besoin.`);
+  }
+}
+
+// ---------------------------------------------------------------- clavier façon tableur
+// Tab / Entrée : case suivante dans la même colonne · Maj+Tab / Maj+Entrée : case précédente
+// ↑ / ↓ : idem dans les cases numériques
+function colCells(el) {
+  const col = el.dataset.col; const scope = el.closest("table, .recipe") || document;
+  return [...scope.querySelectorAll(`[data-col="${CSS.escape(col)}"]`)].filter(x => !x.disabled && x.offsetParent !== null);
+}
+document.addEventListener("keydown", e => {
+  const el = e.target;
+  if (el.matches?.("input[data-col]") && !e.altKey && !e.ctrlKey && !e.metaKey) {
+    const isNum = el.type === "number";
+    let dir = 0;
+    if (e.key === "Tab" || e.key === "Enter") dir = e.shiftKey ? -1 : 1;
+    else if (isNum && e.key === "ArrowDown") dir = 1; else if (isNum && e.key === "ArrowUp") dir = -1;
+    if (dir) {
+      const cells = colCells(el); const i = cells.indexOf(el); const nx = cells[i + dir];
+      if (nx) { e.preventDefault(); el.dispatchEvent(new Event("change", { bubbles: true })); const target = document.getElementById(nx.id) || nx; target.focus(); try { target.select(); } catch (x) { } return; }
+      if (e.key === "Enter") { e.preventDefault(); el.blur(); return; }
+    }
+  }
+  // raccourcis globaux (hors saisie)
+  if (el.matches?.("input,select,textarea") || e.ctrlKey || e.metaKey || e.altKey) return;
+  if (!$("#app") || $("#app").hidden) return;
+  const k = e.key;
+  if (["1", "2", "3", "4", "5"].includes(k)) { setTab(["dash", "grp", "crafts", "res", "jr"][+k - 1]); e.preventDefault(); }
+  else if (k === "/") { e.preventDefault(); if (!isMe()) setView(ME); setTab("crafts"); $("#q").focus(); }
+  else if (k === "n" || k === "N") { e.preventDefault(); if (!isMe()) setView(ME); setTab("jr"); $("#jItem").focus(); }
+  else if (k === "?") { e.preventDefault(); $("#helpPanel").hidden = false; }
+  else if (k === "Escape") { $("#helpPanel").hidden = true; }
+  else if ((k === "b" || k === "v") && tab === "jr" && isMe()) {
+    const btn = el.closest?.("tr")?.querySelector(`[data-quick="${k === "b" ? "brise" : "vendu"}"]`); if (btn) { e.preventDefault(); btn.click(); }
+  }
+});
+$("#btnHelp").addEventListener("click", () => { $("#helpPanel").hidden = false; });
+$("#helpPanel").addEventListener("click", e => { if (e.target.id === "helpPanel" || e.target.closest("[data-close]")) $("#helpPanel").hidden = true; });
 
 // ---------------------------------------------------------------- divers
 document.addEventListener("pointerover", e => {

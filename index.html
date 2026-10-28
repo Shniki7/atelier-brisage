@@ -24,6 +24,7 @@
   <symbol id="i-out" viewBox="0 0 24 24"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4M16 17l5-5-5-5M21 12H9"/></symbol>
   <symbol id="i-eye" viewBox="0 0 24 24"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12z"/><circle cx="12" cy="12" r="3"/></symbol>
   <symbol id="i-plus" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></symbol>
+  <symbol id="i-key" viewBox="0 0 24 24"><rect x="2" y="6" width="20" height="12" rx="2"/><path d="M6 10h.01M10 10h.01M14 10h.01M18 10h.01M7 14h10"/></symbol>
 </svg>
 
 <!-- Firebase pas encore configuré -->
@@ -97,6 +98,7 @@
       <div class="side-actions">
         <button type="button" id="btnData" title="Exporter ou importer mes données"><svg class="i"><use href="#i-data"/></svg><span class="lab">Données</span></button>
         <button type="button" id="btnTheme" title="Changer de thème"><svg class="i"><use href="#i-moon"/></svg><span class="lab" id="themeLab">Thème</span></button>
+        <button type="button" id="btnHelp" title="Raccourcis clavier (?)"><svg class="i"><use href="#i-key"/></svg><span class="lab">Raccourcis</span></button>
         <button type="button" id="btnLogout" title="Se déconnecter"><svg class="i"><use href="#i-out"/></svg><span class="lab">Quitter</span></button>
       </div>
     </div>
@@ -199,11 +201,11 @@
             </div>
             <div class="tbl-wrap">
               <table class="t-crafts">
-                <thead><tr><th class="l">Item</th><th>Coût craft</th><th>Brisage estimé</th><th>Bénéfice</th><th>Rendement</th><th></th></tr></thead>
-                <tbody id="crafts"></tbody>
+                <thead><tr><th class="l">Item</th><th>Coût craft</th><th title="Coefficient de brisage affiché en jeu">Coef. %</th><th>Brisage</th><th>Bénéfice</th><th>Rendement</th><th></th></tr></thead>
+                <tbody id="crafts" data-freeze="crafts"></tbody>
               </table>
             </div>
-            <p class="note">Clique sur un item pour voir sa recette. Les cases orange sont des prix de ressources à renseigner.</p>
+            <p class="note">Clique sur un item pour voir sa recette et les runes qu'il donne. Le brisage est estimé à partir du prix des runes et du coefficient. Saisis une valeur pour le remplacer, efface-la pour revenir à l'estimation. Les cases orange sont des prix à renseigner.</p>
           </div>
           <aside class="panel">
             <div class="panel-head"><h2>Plan selon ton budget</h2></div>
@@ -222,19 +224,35 @@
       </section>
 
       <!-- RESSOURCES -->
-      <section id="v-res" hidden>
+      <section id="v-res" class="stack" hidden>
         <div class="panel">
-          <div class="panel-head">
-            <h2>Prix des ressources</h2>
-            <input id="rq" class="keep" type="search" placeholder="Filtrer" aria-label="Filtrer les ressources" style="max-width:260px;width:100%">
+          <div class="panel-head"><h2>Réglages de calcul</h2><input id="rq" class="keep" type="search" placeholder="Filtrer runes et ressources" aria-label="Filtrer les runes et les ressources" style="max-width:280px;width:100%"></div>
+          <div class="row">
+            <div class="field" style="width:150px"><label for="cfgTaxe">Taxe HDV (%)</label><input id="cfgTaxe" class="num" type="number" min="0" max="50" step="0.5" value="2"></div>
+            <div class="field" style="min-width:260px"><label for="cfgRecolte">Ressources que je récolte</label>
+              <select id="cfgRecolte"><option value="hdv">Comptées au prix HDV (ce que tu pourrais les vendre)</option><option value="gratuit">Comptées gratuites</option></select></div>
           </div>
-          <p class="note">Toutes les ressources des items suivis. Un prix changé ici met à jour tous les crafts qui l'utilisent. Chaque membre a ses propres prix.</p>
+          <p class="note">La taxe est retirée de la valeur des runes, que le brisage soit estimé ou saisi à la main, et du montant proposé quand tu marques une série « Vendu ». Vérifie le taux en jeu à l'hôtel des ventes.</p>
+        </div>
+        <div class="panel">
+          <div class="panel-head"><h2>Prix des runes <span class="count-chip" id="cRunes">0</span></h2><span class="sub">Prix d'une rune de base (Ba)</span></div>
+          <p class="note">Les runes données par tes items suivis. « Points / rune » = ce qu'apporte une rune de base (par exemple 5 pour Vitalité). Le brisage estimé compte tout en runes de base : si tu revends surtout des Pa ou des Ra, mets leur prix divisé par 3 ou par 10.</p>
           <div class="tbl-wrap">
             <table class="t-res">
-              <thead><tr><th class="l">Ressource</th><th class="l">Utilisée dans</th><th>Prix unitaire</th><th>Mis à jour</th></tr></thead>
-              <tbody id="res"></tbody>
+              <thead><tr><th class="l">Rune</th><th class="l">Donnée par</th><th>Points / rune</th><th>Prix</th><th>Mis à jour</th></tr></thead>
+              <tbody id="runes" data-freeze="runes"></tbody>
             </table>
           </div>
+        </div>
+        <div class="panel">
+          <div class="panel-head"><h2>Prix des ressources</h2><span class="sub">Un prix sert à tous les crafts qui utilisent la ressource</span></div>
+          <div class="tbl-wrap">
+            <table class="t-res">
+              <thead><tr><th class="l">Ressource</th><th class="l">Utilisée dans</th><th class="l">Récolte</th><th>Prix unitaire</th><th>Mis à jour</th></tr></thead>
+              <tbody id="res" data-freeze="res"></tbody>
+            </table>
+          </div>
+          <p class="note">Astuce : clique dans la première case de prix, tape le prix, puis <kbd>Tab</kbd> ou <kbd>Entrée</kbd> pour descendre à la ressource suivante.</p>
         </div>
       </section>
 
@@ -278,6 +296,24 @@
     <button type="button" id="btnExport"><svg class="i"><use href="#i-data"/></svg>Exporter une sauvegarde (.json)</button>
     <button type="button" id="btnStarter">Ajouter mes 13 items de départ</button>
     <div class="file"><span class="lbl">Importer un fichier</span><input type="file" id="fileImport" accept=".json,application/json"></div>
+  </div>
+</div>
+
+<div class="modal" id="helpPanel" hidden>
+  <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="helpT">
+    <div class="panel-head"><h2 id="helpT">Raccourcis clavier</h2><button class="ghost x" type="button" data-close aria-label="Fermer">×</button></div>
+    <div class="keys">
+      <div class="kh">Dans les tableaux</div>
+      <div><kbd>Tab</kbd> ou <kbd>Entrée</kbd></div><div>Case suivante dans la même colonne (ligne du dessous)</div>
+      <div><kbd>Maj</kbd> + <kbd>Tab</kbd></div><div>Case précédente dans la même colonne</div>
+      <div><kbd>↑</kbd> <kbd>↓</kbd></div><div>Monter ou descendre dans une colonne de nombres</div>
+      <div class="kh">Partout</div>
+      <div><kbd>1</kbd> à <kbd>5</kbd></div><div>Tableau de bord, Groupe, Crafts, Ressources, Journal</div>
+      <div><kbd>/</kbd></div><div>Chercher un item à suivre</div>
+      <div><kbd>N</kbd></div><div>Nouvelle série dans le journal</div>
+      <div><kbd>B</kbd> / <kbd>V</kbd></div><div>Journal : marquer la ligne sélectionnée Brisé / Vendu</div>
+      <div><kbd>?</kbd></div><div>Afficher cette aide</div>
+    </div>
   </div>
 </div>
 

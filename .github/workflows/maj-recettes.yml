@@ -15,14 +15,16 @@ jobs:
       - uses: actions/checkout@v4
 
       - name: Télécharger la base Dofus 3
-        run: curl -sSL --fail -o dofus.sqlite https://github.com/ledouxm/dofus-sqlite/releases/latest/download/dofus.sqlite
+        run: |
+          curl -sSL --fail -o dofus.sqlite https://github.com/ledouxm/dofus-sqlite/releases/latest/download/dofus.sqlite
+          curl -sSL --fail -o itemsdata.json https://github.com/ledouxm/dofus-sqlite/releases/latest/download/itemsdata.json
 
       - name: Extraire les recettes
-        run: python3 scripts/maj_recettes.py dofus.sqlite data/recettes.json
+        run: python3 scripts/maj_recettes.py dofus.sqlite itemsdata.json data/recettes.json
 
       - name: Enregistrer si quelque chose a changé
         run: |
-          rm -f dofus.sqlite
+          rm -f dofus.sqlite itemsdata.json
           # le champ "src" contient la date : on ignore les changements qui ne touchent que lui
           if git diff --quiet -- data/recettes.json; then echo "Aucun changement."; exit 0; fi
           set +e
@@ -32,7 +34,7 @@ jobs:
           new = json.load(open("data/recettes.json", encoding="utf-8"))
           o = {i[0]: i for i in old["items"]}; n = {i[0]: i for i in new["items"]}
           add = [n[k][1] for k in n if k not in o]; rem = [o[k][1] for k in o if k not in n]
-          mod = [n[k][1] for k in n if k in o and n[k][5] != o[k][5]]
+          mod = [n[k][1] for k in n if k in o and (n[k][5] != o[k][5] or new.get("fx", {}).get(str(k)) != old.get("fx", {}).get(str(k)))]
           print(f"ajoutées={len(add)} supprimées={len(rem)} modifiées={len(mod)}")
           for x in mod[:20]: print("  modifiée :", x)
           open("resume.txt", "w").write(f"{len(add)} ajoutée(s), {len(rem)} supprimée(s), {len(mod)} modifiée(s)")

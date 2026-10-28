@@ -1,12 +1,13 @@
 """Extrait les recettes d'équipements Dofus 3 depuis la base dofus-sqlite
 (https://github.com/ledouxm/dofus-sqlite) et écrit data/recettes.json.
 
-Usage : python3 scripts/maj_recettes.py dofus.sqlite data/recettes.json
+Usage : python3 scripts/maj_recettes.py dofus.sqlite itemsdata.json data/recettes.json
+(itemsdata.json vient de la même release et contient les effets des objets)
 Sort en erreur (code 1) si l'extraction paraît anormale : rien n'est alors écrit.
 """
-import sqlite3, json, sys, datetime
+import sqlite3, json, sys, datetime, re
 
-src, dst = sys.argv[1], sys.argv[2]
+src, fx_src, dst = sys.argv[1], sys.argv[2], sys.argv[3]
 c = sqlite3.connect(src)
 T = dict(c.execute("select id,value from translations where lang='fr'").fetchall())
 
@@ -50,8 +51,48 @@ for uid, resid, q, job in c.execute("select id,resultId,quantities,jobId from Re
     items.append([resid, n, it[3], it[2], J.get(job, '') or '', [[i, x] for i, x in zip(ids, q)]])
 
 items.sort(key=lambda x: x[1])
+
+# ---- effets des objets (pour estimer le brisage) ----
+# EffectData : effectPowerRate = poids de la caractéristique, bonusType 1 = bonus
+E = {r[0]: r[1:] for r in c.execute("select id,descriptionId,effectPowerRate,bonusType,characteristic from EffectData")}
+def stat_name(a):
+    s = T.get(int(E[a][0]), '') if a in E else ''
+    return re.sub(r'#\d|\{\{.*?\}\}', '', s).strip()
+# points apportés par une rune de base (Ba) : 1 sauf pour les caractéristiques très légères
+PTS = {'Vitalité': 5, 'Initiative': 10, 'Pod': 10}
+raw = json.load(open(fx_src, encoding='utf-8'))
+refs = raw['references']['RefIds']
+by_rid = {r['rid']: r['data'] for r in refs}
+wanted = {i[0] for i in items}
+fx, stats = {}, {}
+for r in refs:
+    if r['type']['class'] not in ('ItemData', 'WeaponData'):
+        continue
+    iid = r['data'].get('id')
+    if iid not in wanted:
+        continue
+    lines = []
+    for e in r['data'].get('possibleEffects', {}).get('Array', []):
+        x = by_rid.get(e['rid'])
+        if not x:
+            continue
+        a = x['actionId']
+        if a not in E or E[a][2] != 1 or not E[a][1] or E[a][1] <= 0 or E[a][3] <= 0:
+            continue
+        lo = x.get('diceNum', 0) or 0
+        hi = x.get('diceSide', 0) or 0
+        if hi < lo:
+            hi = lo
+        if hi <= 0:
+            continue
+        sn = stat_name(a)
+        stats[str(a)] = [sn, E[a][1], PTS.get(sn, 1)]
+        lines.append([a, lo, hi])
+    if lines:
+        fx[str(iid)] = lines
+print(f"objets avec effets={len(fx)} caracteristiques={len(stats)}")
 print(f"items={len(items)} ressources={len(res)} incoherences={incoherences}")
-if len(items) < 2500 or incoherences > 50:
+if len(items) < 2500 or incoherences > 50 or len(fx) < 2000:
     print("Extraction anormale : data/recettes.json n'est pas modifié.")
     sys.exit(1)
 
@@ -60,6 +101,8 @@ d = {
     'types': {str(k): v for k, v in types.items()},
     'res': {str(k): v for k, v in res.items()},
     'items': items,
+    'fx': fx,
+    'stats': stats,
 }
 with open(dst, 'w', encoding='utf-8') as f:
     f.write(json.dumps(d, ensure_ascii=False, separators=(',', ':')))
