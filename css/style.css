@@ -349,6 +349,13 @@ input.grp::placeholder{color:var(--fg-2);opacity:.85}
 body.adv-on .adv{display:revert}
 body.adv-on p.adv,body.adv-on small.adv{display:block}
 
+.plan .chk{white-space:normal;align-items:flex-start;line-height:1.4}
+.plan .chk input{margin-top:2px}
+.plan .totals{grid-template-columns:repeat(2,minmax(0,1fr))}
+.plan .plan-list{max-height:460px;overflow-y:auto;padding-right:4px}
+.follow{font-size:11.5px;color:var(--accent);padding:1px 6px}
+.plan-list li>span:nth-child(2){min-width:0}
+
 /* ---------- lecture seule ---------- */
 body.ro .own-only{display:none!important}
 

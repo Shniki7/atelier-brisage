@@ -385,14 +385,62 @@ function renderCrafts() {
   });
   renderPlan(rows);
 }
+// ----- Plan optimal : quels crafts faire, et combien, pour le plus gros bénéfice avec un budget donné
+// Problème du sac à dos borné : chaque exemplaire est un « objet » (coût, gain). Avec une baisse de coefficient,
+// chaque exemplaire supplémentaire du même item rapporte un peu moins, ce que le calcul prend en compte.
+function optimizePlan(cands, budget, maxq, drop) {
+  const units = [];
+  for (const c of cands) for (let k = 0; k < maxq; k++) {
+    const gain = c.brk * Math.pow(1 - drop, k) - c.cost; if (gain <= 0) break;
+    units.push({ c, cost: c.cost, gain });
+  }
+  if (!units.length || budget <= 0) return { picks: [], inv: 0, ben: 0 };
+  units.sort((x, y) => y.gain / y.cost - x.gain / x.cost); units.splice(3000);
+  const step = Math.max(1, Math.ceil(budget / 2000)), W = Math.floor(budget / step);
+  const dp = new Float64Array(W + 1), keep = new Uint8Array(units.length * (W + 1));
+  units.forEach((u, i) => {
+    const w = Math.ceil(u.cost / step); if (w > W) return;
+    for (let cap = W; cap >= w; cap--) { const v = dp[cap - w] + u.gain; if (v > dp[cap]) { dp[cap] = v; keep[i * (W + 1) + cap] = 1; } }
+  });
+  const count = new Map(); let cap = W;
+  for (let i = units.length - 1; i >= 0; i--) if (keep[i * (W + 1) + cap]) { const u = units[i]; count.set(u.c, (count.get(u.c) || 0) + 1); cap -= Math.ceil(u.cost / step); }
+  const picks = [...count].map(([c, q]) => { let g = 0; for (let k = 0; k < q; k++) g += c.brk * Math.pow(1 - drop, k) - c.cost; return { ...c, q, gain: g }; }).sort((a, b) => b.gain - a.gain);
+  return { picks, inv: picks.reduce((a, p) => a + p.q * p.cost, 0), ben: picks.reduce((a, p) => a + p.gain, 0) };
+}
+function greedyPlan(cands, budget, maxq, drop) {
+  let left = budget, ben = 0;
+  for (const c of [...cands].sort((a, b) => b.roi - a.roi)) for (let k = 0; k < maxq; k++) {
+    const g = c.brk * Math.pow(1 - drop, k) - c.cost; if (g <= 0 || c.cost > left) break; left -= c.cost; ben += g;
+  }
+  return ben;
+}
+let allCache = null;
+function allKnownItems() {
+  // tous les items du jeu dont les prix (ressources + runes) sont connus, au coefficient 100 %
+  const key = JSON.stringify([S.prix, S.rp, S.rec, S.cfg, S.rpt, MEMBERS.size, S.suivi.length]);
+  if (allCache && allCache.key === key) return allCache.list;
+  const tracked = new Set(S.suivi.map(x => x.id)); const list = [];
+  for (const it of D.items) {
+    if (tracked.has(it.id) || !D.fx?.[it.id]) continue;
+    const s = { id: it.id, coef: 100, brk: 0 }; const st = statsOf(s);
+    if (st.ok && st.benef > 0) list.push({ s, it, ...st, untracked: true });
+  }
+  allCache = { key, list }; return list;
+}
 function renderPlan(rows) {
-  let budget = Math.max(0, +$("#budget").value || 0); const maxq = Math.max(1, Math.floor(+$("#maxq").value || 1));
-  const cands = rows.filter(r => r.ok && r.benef > 0).sort((a, b) => b.roi - a.roi);
-  const plan = []; let inv = 0, ben = 0;
-  for (const r of cands) { const q = Math.min(maxq, Math.floor(budget / r.cost)); if (q <= 0) continue; plan.push({ ...r, q }); budget -= q * r.cost; inv += q * r.cost; ben += q * r.benef; }
-  $("#plan").innerHTML = plan.length ? plan.map(p => `<li><span class="qty">${p.q}×</span><span>${esc(p.it.n)}<br><small class="note">${fmt(p.cost)} pièce · ${pillTxt(p.roi)}</small></span><span class="pf">+${fmt(p.q * p.benef)}</span></li>`).join("")
-    : `<li class="empty">${cands.length ? `Ton budget (${fmt(+$("#budget").value || 0)}) ne suffit pas : le craft rentable le moins cher coûte ${fmt(Math.min(...cands.map(c => c.cost)))}. Augmente le budget.` : "Renseigne les prix des ressources et des runes pour obtenir un plan."}</li>`;
-  $("#tInv").textContent = fmt(inv); $("#tBen").textContent = fmt(ben);
+  const budget = Math.max(0, +$("#budget").value || 0), maxq = Math.max(1, Math.min(50, Math.floor(+$("#maxq").value || 1)));
+  const drop = Math.min(50, Math.max(0, +$("#dropPct").value || 0)) / 100, all = $("#planAll").checked;
+  let cands = rows.filter(r => r.ok && r.benef > 0);
+  if (all) cands = cands.concat(allKnownItems());
+  const { picks, inv, ben } = optimizePlan(cands, budget, maxq, drop);
+  const simple = greedyPlan(cands, budget, maxq, drop);
+  $("#plan").innerHTML = picks.length ? picks.map(p => `<li><span class="qty">${p.q}×</span><span>${esc(p.it.n)}${p.untracked ? ` <span class="grp-tag">non suivi</span> <button class="ghost own-only follow" data-follow="${p.it.id}" type="button">Suivre</button>` : ""}<br><small class="note">${fmt(p.cost)} pièce · ${pillTxt(p.roi)}${p.untracked ? " · coef. 100 %" : ""}</small></span><span class="pf">+${fmt(p.gain)}</span></li>`).join("")
+    : `<li class="empty">${cands.length ? `Ton budget (${fmt(budget)}) ne suffit pas : le craft rentable le moins cher coûte ${fmt(Math.min(...cands.map(c => c.cost)))}. Augmente le budget.` : "Renseigne les prix des ressources et des runes pour obtenir un plan."}</li>`;
+  $("#tInv").textContent = fmt(inv); $("#tBen").textContent = fmt(ben); $("#tLeft").textContent = fmt(budget - inv);
+  $("#tRoi").textContent = inv ? pillTxt(ben / inv) : "–";
+  $("#planGain").hidden = !(picks.length && ben - simple > Math.max(1, ben * 0.005));
+  $("#planGain").innerHTML = `Ce plan rapporte <b>${fmt(ben - simple)}</b> de plus que de prendre simplement les items par ordre de rendement.`;
+  $("#planInfo").textContent = `${cands.length} item${cands.length > 1 ? "s" : ""} rentable${cands.length > 1 ? "s" : ""} pris en compte${all ? ` (dont ${allKnownItems().length} non suivis)` : ""}.`;
 }
 
 // ----- Ressources et runes
@@ -714,7 +762,7 @@ function setRunePts(a, v) { pendingPrix.add("rpt:" + a); const n = Math.max(1, M
 function setCfg(k, v) { pendingPrix.add("cfg:"); S.cfg = { ...S.cfg, [k]: v }; later("prix", () => Store.savePrix()); }
 document.addEventListener("input", e => {
   const t = e.target;
-  if (t.id === "budget" || t.id === "maxq") { renderCrafts(); applyRO(); return; }
+  if (t.id === "budget" || t.id === "maxq" || t.id === "dropPct") { lsSet(t.id, t.value); renderCrafts(); applyRO(); return; }
   if (t.id === "rq") { rfilter = t.value; renderRes(); applyRO(); return; }
   if (!isMe()) return;
   if (t.dataset.price) { setPrice(t.dataset.price, t.value); t.classList.toggle("miss", !(+t.value > 0)); if (tab === "crafts") softCrafts(); return; }
@@ -856,6 +904,14 @@ document.addEventListener("keydown", e => {
   else if ((k === "b" || k === "v") && tab === "jr" && isMe()) {
     const btn = el.closest?.("tr")?.querySelector(`[data-quick="${k === "b" ? "brise" : "vendu"}"]`); if (btn) { e.preventDefault(); btn.click(); }
   }
+});
+$("#planAll").addEventListener("change", e => { lsSet("planAll", e.target.checked ? "1" : ""); renderCrafts(); applyRO(); });
+["budget", "maxq", "dropPct"].forEach(k => { const v = lsGet(k); if (v) $("#" + k).value = v; });
+if (lsGet("planAll")) $("#planAll").checked = true;
+$("#plan").addEventListener("click", e => {
+  const f = e.target.closest("[data-follow]"); if (!f || !isMe()) return;
+  const id = +f.dataset.follow; if (S.suivi.some(x => x.id === id)) return;
+  S.suivi.push({ id, brk: 0 }); Store.saveSuivi(); render(); toast(`${ITEMS.get(id).n} ajouté aux crafts suivis`);
 });
 $("#advToggle").addEventListener("change", e => { document.body.classList.toggle("adv-on", e.target.checked); lsSet("adv", e.target.checked ? "1" : ""); });
 if (lsGet("adv")) { document.body.classList.add("adv-on"); $("#advToggle").checked = true; }

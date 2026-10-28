@@ -207,18 +207,26 @@
             </div>
             <p class="note">Clique sur un item pour voir sa recette et les runes qu'il donne. Le brisage est estimé à partir du prix des runes et du coefficient. Saisis une valeur pour le remplacer, efface-la pour revenir à l'estimation. Les cases orange sont des prix à renseigner.</p>
           </div>
-          <aside class="panel">
-            <div class="panel-head"><h2>Plan selon ton budget</h2></div>
+          <aside class="panel plan">
+            <div class="panel-head"><h2>Plan optimal</h2><span class="sub">Le plus gros bénéfice pour ton budget</span></div>
             <div class="row">
-              <div class="field" style="flex:1"><label for="budget">Budget (kamas)</label><input id="budget" class="num keep" type="number" min="0" step="1000" value="50000"></div>
-              <div class="field" style="width:100px"><label for="maxq">Max / item</label><input id="maxq" class="num keep" type="number" min="1" step="1" value="5"></div>
+              <div class="field" style="flex:1;min-width:150px"><label for="budget">Budget (kamas)</label><input id="budget" class="num keep" type="number" min="0" step="100000" value="10000000"></div>
+              <div class="field" style="width:96px"><label for="maxq">Max / item</label><input id="maxq" class="num keep" type="number" min="1" max="50" step="1" value="5"></div>
+              <div class="field" style="width:128px"><label for="dropPct" title="De combien baisse la valeur du brisage à chaque exemplaire supplémentaire du même item">Baisse / brisage %</label><input id="dropPct" class="num keep" type="number" min="0" max="50" step="0.5" value="0"></div>
             </div>
+            <label class="chk"><input type="checkbox" id="planAll" class="keep"><span>Inclure tous les items dont je connais les prix (pas seulement mes crafts suivis)</span></label>
             <ul class="plan-list" id="plan"></ul>
+            <p class="hint" id="planGain" hidden></p>
             <div class="totals">
               <div class="tot"><span>Investi</span><b id="tInv">0</b></div>
               <div class="tot big"><span>Bénéfice</span><b id="tBen">0</b></div>
+              <div class="tot"><span>Rendement</span><b id="tRoi">–</b></div>
+              <div class="tot"><span>Reste</span><b id="tLeft">0</b></div>
             </div>
-            <p class="note">Les items au meilleur rendement passent en premier, sans dépasser le max par item pour ne pas faire chuter le coefficient.</p>
+            <p class="note" id="planInfo"></p>
+            <details><summary>Comment le plan est calculé</summary>
+              <p class="note" style="margin-top:8px">L'outil teste les combinaisons possibles et garde celle qui rapporte le plus au total sans dépasser ton budget. Ce n'est pas forcément les items au meilleur rendement : un item un peu moins rentable peut mieux remplir le budget. « Max / item » limite le nombre d'exemplaires d'un même item. « Baisse / brisage » simule la chute du coefficient : à 5 %, le 2<sup>e</sup> exemplaire rapporte 5 % de moins que le 1<sup>er</sup>, le 3<sup>e</sup> encore 5 % de moins, etc.</p>
+            </details>
           </aside>
         </div>
       </section>
