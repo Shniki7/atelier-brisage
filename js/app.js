@@ -3,7 +3,8 @@
      profiles/{uid}                 pseudo, serveur, code, createdAt
      profiles/{uid}/data/prix       { p: {idRessource: prix}, m: {idRessource: "AAAA-MM-JJ"} }
      profiles/{uid}/data/suivi      { items: [{ id, brk, r? }] }
-     profiles/{uid}/journal/{id}    une série : item, nom, qte, cout, achat, brisage, runes, vente, encaisse
+     profiles/{uid}/data/journal    toutes les séries : items [{_id, item, nom, qte, cout, achat, brisage, runes, vente, encaisse, src, dest}]
+     (les anciennes versions rangeaient une série par document dans profiles/{uid}/journal : converti automatiquement)
 */
 "use strict";
 const $ = s => document.querySelector(s);
@@ -29,7 +30,6 @@ let S = blank();                            // données du profil affiché
 let open = new Set(), tab = "home", rfilter = "";
 let gran = lsGet("gran") || "semaine", ggran = lsGet("ggran") || "semaine", demoOn = true, charts = {};
 const pendingPrix = new Set();
-const pendingJ = new Map();                 // saisies du journal pas encore confirmées par le serveur : id -> {champ: valeur}
 
 function blank() { return { p: {}, prix: {}, maj: {}, rp: {}, rm: {}, rpt: {}, rec: {}, xp: {}, xw: {}, xws: "", pl: [], cfg: { taxe: 2, recolte: "hdv" }, suivi: [], journal: [], loaded: false }; }
 function member(uid) { if (!MEMBERS.has(uid)) MEMBERS.set(uid, blank()); return MEMBERS.get(uid); }
@@ -39,8 +39,8 @@ function membersSorted() {
   return [...MEMBERS.entries()].filter(([, m]) => m.p && m.p.pseudo)
     .sort((a, b) => (a[1].p.createdAt?.seconds ?? 9e12) - (b[1].p.createdAt?.seconds ?? 9e12));
 }
-function colorOf(uid) { const i = membersSorted().findIndex(([u]) => u === uid); return `var(--s${(Math.max(0, i) % 8) + 1})`; }
-function colorHex(uid) { const i = membersSorted().findIndex(([u]) => u === uid); return css(`--s${(Math.max(0, i) % 8) + 1}`); }
+function colorOf(uid) { const i = membersSorted().findIndex(([u]) => u === uid); return `var(--s${(Math.max(0, i) % 12) + 1})`; }
+function colorHex(uid) { const i = membersSorted().findIndex(([u]) => u === uid); return css(`--s${(Math.max(0, i) % 12) + 1}`); }
 const initials = s => (s || "?").trim().slice(0, 2).toUpperCase();
 
 // ---------------------------------------------------------------- calculs
@@ -51,10 +51,10 @@ const ageDays = d => { const x = pD(d); return x ? Math.floor((Date.now() - x) /
 function median(a) { if (!a.length) return null; const b = [...a].sort((x, y) => x - y), m = b.length >> 1; return b.length % 2 ? b[m] : (b[m - 1] + b[m]) / 2; }
 // Prix proposé par le groupe : médiane des prix saisis par les autres membres du même serveur ces 14 derniers jours
 function groupPrice(field, dateField, id, M = S) {
-  const srv = norm(M.p?.serveur || ""); const vals = [];
+  const srv = norm(M.p?.serveur || "").trim(); const vals = [];
   for (const [, m] of MEMBERS) {
     if (m === M) continue;
-    if (srv && m.p?.serveur && norm(m.p.serveur) !== srv) continue;
+    if (srv && m.p?.serveur && norm(m.p.serveur).trim() !== srv) continue;
     const v = +m[field]?.[id]; if (v > 0 && ageDays(m[dateField]?.[id]) <= GROUP_DAYS) vals.push(v);
   }
   return vals.length ? { v: Math.round(median(vals)), n: vals.length } : null;
@@ -227,15 +227,26 @@ function subscribeMember(uid) {
     let items = (snap.data() || {}).items || [];
     // reprise d'un panier gardé dans le navigateur (ancienne version)
     if (!snap.exists) { try { const old = JSON.parse(lsGet("cart-" + ME) || "[]"); if (old.length) { items = old; base.collection("data").doc("panier").set({ items }).catch(fail); } } catch (e) { } }
-    lsSet("cart-" + ME, ""); m.cart = items.map(x => ({ ...x })); if (tab === "home") renderHome();
+    lsSet("cart-" + ME, ""); m.cart = items.map(x => ({ ...x })); if (tab === "home" && D && VIEW) renderHome();
   }, onErr));
   unsubs.push(base.collection("data").doc("suivi").onSnapshot(snap => {
     if (uid === ME && timers.suivi) return; // modification locale en attente d'enregistrement
     const d = snap.data() || {}; m.suivi = (d.items || []).map(x => ({ ...x })); render();
   }, onErr));
-  unsubs.push(base.collection("journal").onSnapshot(snap => {
-    m.journal = snap.docs.map(d => ({ _id: d.id, ...d.data(), ...(uid === ME ? pendingJ.get(d.id) || {} : {}) }));
-    render();
+  // Journal : un seul document par membre (data/journal) au lieu d'un document par série.
+  // À 10 joueurs, relire chaque série de chaque membre à chaque ouverture dépassait le quota gratuit de Firebase en ~3 mois.
+  unsubs.push(base.collection("data").doc("journal").onSnapshot(async snap => {
+    if (uid === ME && timers.journal) return; // modification locale en attente d'enregistrement
+    if (!snap.exists) {
+      // ancienne version : séries rangées une par une ; lecture unique, puis conversion par le propriétaire
+      if (m.legacy) return; m.legacy = true;
+      try {
+        const old = await base.collection("journal").get(); const items = old.docs.map(d => ({ _id: d.id, ...d.data() }));
+        m.journal = items; if (uid === ME && items.length) base.collection("data").doc("journal").set({ items }).catch(fail);
+      } catch (e) { onErr(e); }
+      render(); return;
+    }
+    m.journal = ((snap.data() || {}).items || []).map(x => ({ ...x })); render();
   }, onErr));
 }
 function onErr(e) { console.error(e); showError(e.code === "permission-denied" ? "Lecture refusée par Firebase : vérifie que les règles Firestore sont bien publiées." : "Lecture impossible : " + (e.code || e.message)); }
@@ -255,18 +266,17 @@ function showError(msg) {
 const Store = {
   savePrix() { if (!isMe()) return; pendingPrix.clear(); db.doc(`profiles/${ME}/data/prix`).set({ p: { ...S.prix }, m: { ...S.maj }, rp: { ...S.rp }, rm: { ...S.rm }, rpt: { ...S.rpt }, r: { ...S.rec }, xp: { ...S.xp }, xw: { ...S.xw }, xws: S.xws || "", pl: [...S.pl], cfg: { ...S.cfg } }).catch(fail); },
   saveSuivi() { if (!isMe()) return; timers.suivi = null; db.doc(`profiles/${ME}/data/suivi`).set({ items: S.suivi.map(x => ({ ...x })) }).catch(fail); },
-  addJr(e) { if (!isMe()) return; db.collection(`profiles/${ME}/journal`).add(e).catch(fail); },
-  updJr(id, patch) {
-    if (!isMe()) return;
-    pendingJ.set(id, { ...(pendingJ.get(id) || {}), ...patch });
-    db.doc(`profiles/${ME}/journal/${id}`).update(patch).then(() => {
-      const p = pendingJ.get(id); if (!p) return;
-      for (const k of Object.keys(patch)) if (p[k] === patch[k]) delete p[k];
-      if (!Object.keys(p).length) pendingJ.delete(id);
-    }).catch(fail);
+  saveJournal() {
+    if (!isMe()) return; timers.journal = null;
+    const items = member(ME).journal.map(({ ...x }) => x), size = JSON.stringify(items).length;
+    if (size > 900000) showError("Ton journal approche la taille maximale d'un document Firebase (1 Mo) : exporte une sauvegarde et préviens-moi pour l'archiver.");
+    db.doc(`profiles/${ME}/data/journal`).set({ items }).catch(fail);
   },
-  delJr(id) { if (!isMe()) return; db.doc(`profiles/${ME}/journal/${id}`).delete().catch(fail); }
+  addJr(e) { if (!isMe()) return; member(ME).journal.push({ _id: db.collection("x").doc().id, ...e }); journalLater(); render(); },
+  updJr(id, patch) { if (!isMe()) return; const e = member(ME).journal.find(j => j._id === id); if (!e) return; Object.assign(e, patch); journalLater(); },
+  delJr(id) { if (!isMe()) return; const m = member(ME); m.journal = m.journal.filter(j => j._id !== id); if (S === m) S.journal = m.journal; journalLater(); render(); }
 };
+function journalLater() { clearTimeout(timers.journal); timers.journal = setTimeout(() => Store.saveJournal(), 500); }
 function saveSuiviLater() { clearTimeout(timers.suivi); timers.suivi = setTimeout(() => Store.saveSuivi(), 600); }
 
 function loadRecipes() {
@@ -1119,8 +1129,7 @@ document.addEventListener("input", e => {
   if (t.dataset.j) {
     const f = t.dataset.f; const v = (f === "achat" || f === "brisage" || f === "vente") ? t.value : (+t.value || 0);
     const e0 = S.journal.find(j => j._id === t.dataset.j); if (e0) e0[f] = v;
-    pendingJ.set(t.dataset.j, { ...(pendingJ.get(t.dataset.j) || {}), [f]: v });   // protégé tout de suite
-    later("j" + t.dataset.j + f, () => Store.updJr(t.dataset.j, { [f]: v }), 400); return;
+    Store.updJr(t.dataset.j, { [f]: v }); return;
   }
   if (t.id === "jQty" && !$("#jCost").dataset.touched) prefillCost();
   if (t.id === "jCost") t.dataset.touched = "1";
@@ -1189,9 +1198,8 @@ async function importData(d) {
     if (d.prix?.p) { Object.assign(me.prix, d.prix.p); Object.assign(me.maj, d.prix.m || {}); Object.assign(me.rp, d.prix.rp || {}); Object.assign(me.rm, d.prix.rm || {}); Object.assign(me.rpt, d.prix.rpt || {}); Object.assign(me.rec, d.prix.r || {}); if (d.prix.cfg) me.cfg = { ...me.cfg, ...d.prix.cfg }; }
     const wasView = VIEW; VIEW = ME; S = me;
     Store.saveSuivi(); Store.savePrix();
-    const batch = db.batch();
-    for (const j of d.journal || []) { batch.set(db.collection(`profiles/${ME}/journal`).doc(), j); nj++; }
-    if (nj) await batch.commit();
+    for (const j of d.journal || []) { const { _id, ...x } = j; me.journal.push({ _id: db.collection("x").doc().id, ...x }); nj++; }
+    if (nj) Store.saveJournal();
     VIEW = wasView; S = member(VIEW); render();
     toast(`Import terminé : ${ni} item(s), ${nj} série(s)`);
 }
@@ -1367,10 +1375,12 @@ $("#btnReset").addEventListener("click", async () => {
   $("#btnReset").disabled = true;
   try {
     $("#btnExport").click();
-    const me = member(ME), ids = me.journal.map(j => j._id).filter(Boolean);
+    const me = member(ME);
+    // anciennes séries rangées une par une (versions précédentes) : on les supprime aussi
+    const old = await db.collection(`profiles/${ME}/journal`).get(), ids = old.docs.map(d => d.id);
     for (let i = 0; i < ids.length; i += 400) { const b = db.batch(); ids.slice(i, i + 400).forEach(id => b.delete(db.doc(`profiles/${ME}/journal/${id}`))); await b.commit(); }
     Object.assign(me, { prix: {}, maj: {}, rp: {}, rm: {}, rpt: {}, rec: {}, xp: {}, xw: {}, xws: "", pl: [], suivi: [], journal: [] });
-    const wasView = VIEW; VIEW = ME; S = me; pendingPrix.clear(); Store.savePrix(); Store.saveSuivi(); cartSet([]); VIEW = wasView; S = member(VIEW);
+    const wasView = VIEW; VIEW = ME; S = me; pendingPrix.clear(); Store.savePrix(); Store.saveSuivi(); Store.saveJournal(); cartSet([]); VIEW = wasView; S = member(VIEW);
     Object.keys(frozen).forEach(x => delete frozen[x]);
     $("#resetTxt").value = ""; $("#dataPanel").hidden = true; render(); toast("Tout est vidé : page vierge");
   } catch (x) { console.error(x); toast("Échec de la remise à zéro"); }
