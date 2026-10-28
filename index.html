@@ -1,0 +1,269 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Atelier de brisage</title>
+<meta name="description" content="Rentabilité du craft et du brisage sur Dofus 3, journal des ventes et bilans du groupe.">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%232f6b4f'/%3E%3Cpath d='M16 6l8 10-8 10-8-10z' fill='%23e3b04b'/%3E%3C/svg%3E">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,600;12..96,800&family=Atkinson+Hyperlegible:wght@400;700&family=JetBrains+Mono:wght@500;700&display=swap">
+<link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+
+<!-- Firebase pas encore configuré -->
+<div class="screen" id="screen-setup" hidden>
+  <div class="card">
+    <h1>Atelier de <span style="color:var(--kama)">brisage</span></h1>
+    <p>L'outil n'est pas encore relié à Firebase.</p>
+    <ol class="steps">
+      <li>Suis le guide <code>README.md</code>, section « Firebase ».</li>
+      <li>Colle la configuration de ton projet dans <code>js/firebase-config.js</code>.</li>
+      <li>Recharge cette page.</li>
+    </ol>
+  </div>
+</div>
+
+<!-- Connexion -->
+<div class="screen" id="screen-login" hidden>
+  <div class="card">
+    <h1>Atelier de <span style="color:var(--kama)">brisage</span></h1>
+    <p class="sub" style="margin:0">Rentabilité du craft et du brisage sur Dofus 3, journal de tes ventes et bilans du groupe.</p>
+    <button class="gbtn" id="btnLogin" type="button">
+      <svg width="18" height="18" viewBox="0 0 48 48" aria-hidden="true"><path fill="#FFC107" d="M43.6 20.5H42V20H24v8h11.3C33.7 32.7 29.2 36 24 36c-6.6 0-12-5.4-12-12s5.4-12 12-12c3 0 5.8 1.1 7.9 3l5.7-5.7C34 6.1 29.3 4 24 4 12.9 4 4 12.9 4 24s8.9 20 20 20 20-8.9 20-20c0-1.3-.1-2.4-.4-3.5z"/><path fill="#FF3D00" d="M6.3 14.7l6.6 4.8C14.7 15.1 19 12 24 12c3 0 5.8 1.1 7.9 3l5.7-5.7C34 6.1 29.3 4 24 4 16.3 4 9.7 8.3 6.3 14.7z"/><path fill="#4CAF50" d="M24 44c5.2 0 9.9-2 13.4-5.2l-6.2-5.2C29.2 35.1 26.7 36 24 36c-5.2 0-9.6-3.3-11.3-8l-6.5 5C9.5 39.6 16.2 44 24 44z"/><path fill="#1976D2" d="M43.6 20.5H42V20H24v8h11.3c-.8 2.2-2.2 4.2-4.1 5.6l6.2 5.2C37 39.2 44 34 44 24c0-1.3-.1-2.4-.4-3.5z"/></svg>
+      Se connecter avec Google
+    </button>
+    <p class="err" id="loginErr" hidden></p>
+  </div>
+</div>
+
+<!-- Création du profil -->
+<div class="screen" id="screen-onboard" hidden>
+  <div class="card">
+    <h2>Crée ton profil</h2>
+    <p class="note">Ton pseudo est visible par le groupe. Le code du groupe t'est donné par la personne qui t'a invité.</p>
+    <form id="fOnboard" novalidate>
+      <div class="field"><label for="oPseudo">Pseudo</label><input id="oPseudo" maxlength="24" autocomplete="nickname" required></div>
+      <div class="field"><label for="oServeur">Serveur (facultatif)</label><input id="oServeur" maxlength="30" placeholder="ex. Draconiros"></div>
+      <div class="field"><label for="oCode">Code du groupe</label><input id="oCode" autocomplete="off" required></div>
+      <p class="err" id="onbErr" hidden></p>
+      <button class="primary" type="submit">Rejoindre le groupe</button>
+      <button class="ghost" type="button" id="btnLogout2">Changer de compte Google</button>
+    </form>
+  </div>
+</div>
+
+<!-- Application -->
+<div class="wrap" id="app" hidden>
+  <header class="top">
+    <div>
+      <h1>Atelier de <span>brisage</span></h1>
+      <p class="sub">Recettes Dofus 3 tirées des fichiers du jeu. Renseigne le prix de chaque ressource une fois, le coût des crafts se calcule tout seul, et le journal garde la trace de ce que tu gagnes vraiment.</p>
+    </div>
+    <div class="who">
+      <div class="field"><label for="viewSel">Profil affiché</label><select id="viewSel"></select></div>
+      <div class="me-chip"><span class="avatar" id="meAv"></span><span id="meName"></span>
+        <button class="ghost" id="btnData" type="button" title="Exporter ou importer mes données">Mes données</button>
+        <button class="ghost" id="btnLogout" type="button">Déconnexion</button></div>
+    </div>
+  </header>
+
+  <div class="ro-banner" id="roBanner" hidden>
+    <span>Tu regardes le profil de <b id="roName"></b>. Lecture seule.</span>
+    <button type="button" id="btnBackMe">Revenir à mon profil</button>
+  </div>
+
+  <div class="panel" id="dataPanel" hidden>
+    <div class="panel-head"><h2>Mes données</h2><button class="ghost x" id="btnDataClose" type="button" aria-label="Fermer">×</button></div>
+    <p class="note">Exporte une copie de sauvegarde de tes items suivis, de tes prix et de ton journal, ou importe un fichier exporté. L'import ajoute les items et les séries et remplace les prix renseignés dans le fichier.</p>
+    <div class="row">
+      <button type="button" id="btnExport">Exporter (.json)</button>
+      <label class="field" style="display:flex;gap:8px;align-items:center"><span class="lbl">Importer</span><input type="file" id="fileImport" accept=".json,application/json"></label>
+    </div>
+  </div>
+
+  <nav role="tablist">
+    <button role="tab" aria-selected="true" data-tab="dash">Tableau de bord</button>
+    <button role="tab" aria-selected="false" data-tab="grp">Le groupe <span class="count" id="cGrp">0</span></button>
+    <button role="tab" aria-selected="false" data-tab="crafts">Crafts suivis <span class="count" id="cCrafts">0</span></button>
+    <button role="tab" aria-selected="false" data-tab="res">Prix des ressources <span class="count" id="cRes">0</span></button>
+    <button role="tab" aria-selected="false" data-tab="jr">Journal <span class="count" id="cJr">0</span></button>
+  </nav>
+
+  <div id="loading" class="loading">Chargement…</div>
+
+  <!-- TABLEAU DE BORD -->
+  <section id="v-dash" hidden>
+    <div style="display:grid;gap:18px">
+      <div class="dash-bar">
+        <div class="seg" role="group" aria-label="Période">
+          <button type="button" data-g="jour" aria-pressed="false">Jour</button>
+          <button type="button" data-g="semaine" aria-pressed="true">Semaine</button>
+          <button type="button" data-g="mois" aria-pressed="false">Mois</button>
+          <button type="button" data-g="annee" aria-pressed="false">Année</button>
+        </div>
+        <span class="note" id="dashRange"></span>
+      </div>
+      <div class="banner" id="demoBanner" hidden>
+        <span><b>Données d'exemple.</b> Ton journal est vide : voici à quoi ressemblera ton tableau de bord. Tes vraies séries remplacent l'exemple dès la première saisie.</span>
+        <button type="button" id="demoToggle">Masquer l'exemple</button>
+      </div>
+      <div class="kpis" id="kpis"></div>
+      <div class="dgrid">
+        <div class="panel span2">
+          <div class="panel-head"><h2 id="hBen">Bénéfice par semaine</h2>
+            <div class="legend"><span><i style="background:var(--accent)"></i>Bénéfice</span><span><i style="background:var(--bad)"></i>Perte</span></div></div>
+          <div class="chart-box"><canvas id="chBen" role="img" aria-label="Bénéfice réalisé par période"></canvas></div>
+          <details><summary>Voir les chiffres par période</summary><div class="tbl-wrap"><table class="t-per"><thead><tr><th class="l">Période</th><th>Ventes</th><th>Coût des séries vendues</th><th>Bénéfice</th><th>Marge</th><th>Séries</th></tr></thead><tbody id="tPer"></tbody></table></div></details>
+        </div>
+        <div class="panel">
+          <h2>Rendement réel par item</h2>
+          <div class="legend"><span><i style="background:var(--accent)"></i>Réel</span><span><i class="tick"></i>Estimé dans Crafts suivis</span></div>
+          <div id="itemBars"></div>
+        </div>
+        <div class="panel span2">
+          <div class="panel-head"><h2>Activité des 26 dernières semaines</h2><div class="legend" id="heatLegend"></div></div>
+          <div class="heat-wrap"><div class="heat-row"><div class="heat-days"><span>lun</span><span></span><span>mer</span><span></span><span>ven</span><span></span><span>dim</span></div><div class="heat" id="heat"></div></div></div>
+        </div>
+        <div class="panel">
+          <h2>À surveiller</h2>
+          <ul class="alerts" id="alerts"></ul>
+        </div>
+        <div class="panel span3">
+          <div class="panel-head"><h2>Bénéfice cumulé</h2><span class="note">Depuis la première série</span></div>
+          <div class="chart-box sm"><canvas id="chCum" role="img" aria-label="Bénéfice cumulé dans le temps"></canvas></div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- LE GROUPE -->
+  <section id="v-grp" hidden>
+    <div style="display:grid;gap:18px">
+      <div class="dash-bar">
+        <div class="seg" role="group" aria-label="Période du classement">
+          <button type="button" data-gg="semaine" aria-pressed="true">Cette semaine</button>
+          <button type="button" data-gg="mois" aria-pressed="false">Ce mois-ci</button>
+          <button type="button" data-gg="annee" aria-pressed="false">Cette année</button>
+          <button type="button" data-gg="tout" aria-pressed="false">Depuis le début</button>
+        </div>
+        <span class="note">Clique sur un membre pour ouvrir son profil.</span>
+      </div>
+      <div class="dgrid">
+        <div class="panel">
+          <h2 id="hGrpBar">Bénéfice cette semaine</h2>
+          <div id="grpBars"></div>
+        </div>
+        <div class="panel span2">
+          <div class="panel-head"><h2>Bénéfice cumulé du groupe</h2><div class="legend" id="grpLegend"></div></div>
+          <div class="chart-box"><canvas id="chGrp" role="img" aria-label="Bénéfice cumulé de chaque membre sur 12 semaines"></canvas></div>
+          <p class="note">12 dernières semaines, bénéfice réalisé cumulé de chaque membre.</p>
+        </div>
+        <div class="panel span3">
+          <h2>Bilans</h2>
+          <div class="tbl-wrap">
+            <table class="t-grp">
+              <thead><tr><th class="l">Membre</th><th>Bénéfice</th><th>Ventes</th><th>Rendement</th><th>Séries vendues</th><th>Capital en stock</th><th class="l">Meilleur item</th><th class="l">Dernière activité</th></tr></thead>
+              <tbody id="grpRows"></tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- CRAFTS SUIVIS -->
+  <section id="v-crafts" hidden>
+    <div class="grid">
+      <div class="panel">
+        <div class="panel-head">
+          <h2>Items suivis</h2>
+          <div class="search own-only">
+            <input id="q" type="search" placeholder="Ajouter un item : ex. Bottes de Rapiat" autocomplete="off" aria-label="Chercher un item à ajouter">
+            <ul class="results" id="qres" hidden></ul>
+          </div>
+        </div>
+        <div class="tbl-wrap">
+          <table class="t-crafts">
+            <thead><tr><th class="l">Item</th><th>Coût craft</th><th>Brisage estimé</th><th>Bénéfice</th><th>Rendement</th><th></th></tr></thead>
+            <tbody id="crafts"></tbody>
+          </table>
+        </div>
+        <p class="note">Clique sur un item pour voir sa recette. Les cases orange sont des prix de ressources pas encore renseignés.</p>
+      </div>
+      <aside class="panel">
+        <h2>Plan selon ton budget</h2>
+        <div class="row">
+          <div class="field"><label for="budget">Budget (kamas)</label><input id="budget" class="num keep" type="number" min="0" step="1000" value="50000" style="width:130px"></div>
+          <div class="field"><label for="maxq">Max par item</label><input id="maxq" class="num keep" type="number" min="1" step="1" value="5" style="width:80px"></div>
+        </div>
+        <ul class="plan-list" id="plan"></ul>
+        <div class="totals">
+          <div class="tot"><span>Investi</span><b id="tInv">0</b></div>
+          <div class="tot big"><span>Bénéfice</span><b id="tBen">0</b></div>
+        </div>
+        <p class="note">Seuls les items avec un coût complet et un brisage estimé entrent dans le plan, du meilleur rendement au moins bon, sans dépasser le max par item pour ne pas faire chuter le coefficient.</p>
+      </aside>
+    </div>
+  </section>
+
+  <!-- RESSOURCES -->
+  <section id="v-res" hidden>
+    <div class="panel">
+      <div class="panel-head">
+        <h2>Prix des ressources</h2>
+        <input id="rq" class="keep" type="search" placeholder="Filtrer…" aria-label="Filtrer les ressources" style="max-width:240px">
+      </div>
+      <p class="note">Toutes les ressources des items suivis. Un prix changé ici met à jour tous les crafts qui l'utilisent. Chaque membre a ses propres prix.</p>
+      <div class="tbl-wrap">
+        <table class="t-res">
+          <thead><tr><th class="l">Ressource</th><th class="l">Utilisée dans</th><th>Prix unitaire</th><th>Mis à jour</th></tr></thead>
+          <tbody id="res"></tbody>
+        </table>
+      </div>
+    </div>
+  </section>
+
+  <!-- JOURNAL -->
+  <section id="v-jr" hidden>
+    <div class="panel own-only">
+      <h2>Nouvelle série</h2>
+      <form id="jform" class="jform" novalidate>
+        <div class="field wide"><label for="jItem">Item</label><select id="jItem"></select></div>
+        <div class="field"><label for="jQty">Quantité</label><input id="jQty" class="num" type="number" min="1" value="1"></div>
+        <div class="field"><label for="jCost">Coût total</label><input id="jCost" class="num" type="number" min="0"></div>
+        <div class="field"><label for="jBuy">Date d'achat</label><input id="jBuy" type="date"></div>
+        <button class="primary" type="submit">Ajouter au journal</button>
+      </form>
+      <p class="note">Le coût total est pré-rempli avec le prix actuel des ressources. Corrige-le si tu as payé autre chose.</p>
+    </div>
+    <div class="panel" style="margin-top:18px">
+      <div class="panel-head"><h2>Historique</h2></div>
+      <div class="totals" id="jtot"></div>
+      <div class="tbl-wrap">
+        <table class="t-jr">
+          <thead><tr><th class="l">Item</th><th>Qté</th><th>Achat</th><th>Coût total</th><th>Brisage</th><th>Runes (estim.)</th><th>Vente</th><th>Encaissé</th><th>Bénéfice</th><th>Rendement</th><th class="l">État</th><th></th></tr></thead>
+          <tbody id="jr"></tbody>
+        </table>
+      </div>
+      <p class="note">Au brisage, note la date et la valeur des runes. Quand tu les vends, note la date et les kamas encaissés : c'est ce montant qui compte dans le tableau de bord. Sans vente saisie, la valeur des runes est comptée à la date du brisage.</p>
+    </div>
+    <div class="panel" id="realPanel" style="margin-top:18px">
+      <h2>Rendement réel par item</h2>
+      <div class="tbl-wrap"><table style="min-width:520px"><thead><tr><th class="l">Item</th><th>Séries</th><th>Investi</th><th>Ventes</th><th>Bénéfice</th><th>Rendement réel</th></tr></thead><tbody id="real"></tbody></table></div>
+    </div>
+  </section>
+</div>
+
+<div class="toast" id="toast" role="status"></div>
+<div class="tip" id="tip"></div>
+
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-auth-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
+<script src="js/firebase-config.js"></script>
+<script src="js/app.js"></script>
+</body>
+</html>

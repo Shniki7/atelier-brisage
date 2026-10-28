@@ -1,0 +1,41 @@
+rules_version = '2';
+
+// Règles de sécurité de l'Atelier de brisage.
+// 1. Remplace CODE_DU_GROUPE (ligne marquée) par un code secret de ton choix, ex. "brisage-2026-k7".
+// 2. Firebase > Firestore Database > Règles : colle tout ce fichier, puis « Publier ».
+//
+// Qui peut faire quoi :
+// - Seul quelqu'un qui connaît le code peut créer son profil.
+// - Tout membre (= quelqu'un qui a un profil) lit les profils et les journaux de tout le groupe.
+// - Chacun ne peut modifier que ses propres données.
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function signedIn() { return request.auth != null; }
+    function member() {
+      return signedIn() && exists(/databases/$(database)/documents/profiles/$(request.auth.uid));
+    }
+
+    match /profiles/{uid} {
+      allow read: if member() || (signedIn() && request.auth.uid == uid);
+
+      allow create: if signedIn() && request.auth.uid == uid
+        && request.resource.data.code == "CODE_DU_GROUPE"   // <-- remplace ici
+        && request.resource.data.pseudo is string
+        && request.resource.data.pseudo.size() > 0
+        && request.resource.data.pseudo.size() <= 24;
+
+      allow update: if signedIn() && request.auth.uid == uid
+        && request.resource.data.code == resource.data.code;
+
+      allow delete: if signedIn() && request.auth.uid == uid;
+
+      // prix, items suivis, journal
+      match /{document=**} {
+        allow read: if member();
+        allow write: if signedIn() && request.auth.uid == uid;
+      }
+    }
+  }
+}

@@ -1,0 +1,49 @@
+name: Mise à jour des recettes Dofus 3
+
+on:
+  schedule:
+    - cron: "17 9 * * 3"   # chaque mercredi vers 10 h 17 (heure de Paris, hiver)
+  workflow_dispatch:        # bouton « Run workflow » dans l'onglet Actions
+
+permissions:
+  contents: write
+
+jobs:
+  maj:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Télécharger la base Dofus 3
+        run: curl -sSL --fail -o dofus.sqlite https://github.com/ledouxm/dofus-sqlite/releases/latest/download/dofus.sqlite
+
+      - name: Extraire les recettes
+        run: python3 scripts/maj_recettes.py dofus.sqlite data/recettes.json
+
+      - name: Enregistrer si quelque chose a changé
+        run: |
+          rm -f dofus.sqlite
+          # le champ "src" contient la date : on ignore les changements qui ne touchent que lui
+          if git diff --quiet -- data/recettes.json; then echo "Aucun changement."; exit 0; fi
+          set +e
+          python3 - <<'PY'
+          import json, subprocess, sys
+          old = json.loads(subprocess.check_output(["git", "show", "HEAD:data/recettes.json"]))
+          new = json.load(open("data/recettes.json", encoding="utf-8"))
+          o = {i[0]: i for i in old["items"]}; n = {i[0]: i for i in new["items"]}
+          add = [n[k][1] for k in n if k not in o]; rem = [o[k][1] for k in o if k not in n]
+          mod = [n[k][1] for k in n if k in o and n[k][5] != o[k][5]]
+          print(f"ajoutées={len(add)} supprimées={len(rem)} modifiées={len(mod)}")
+          for x in mod[:20]: print("  modifiée :", x)
+          open("resume.txt", "w").write(f"{len(add)} ajoutée(s), {len(rem)} supprimée(s), {len(mod)} modifiée(s)")
+          sys.exit(0 if (add or rem or mod) else 3)
+          PY
+          rc=$?
+          set -e
+          if [ $rc -ne 0 ] && [ $rc -ne 3 ]; then exit $rc; fi
+          if [ $rc -eq 3 ]; then git checkout -- data/recettes.json; echo "Seule la date a changé."; exit 0; fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add data/recettes.json
+          git commit -m "Recettes Dofus 3 : $(cat resume.txt)"
+          git push
