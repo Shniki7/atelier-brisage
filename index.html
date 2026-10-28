@@ -145,7 +145,7 @@
               <div class="seg sm" id="homePer"><button type="button" data-hp="semaine">Semaine</button><button type="button" data-hp="mois">Mois</button><button type="button" data-hp="tout">Tout</button></div></div>
             <div class="tot big"><span>Mon bénéfice</span><b id="homeBen">0</b></div>
             <ul class="kv" id="homeBenKv"></ul>
-            <p class="note">Bénéfice = kamas récupérés (ventes, ou runes obtenues) − kamas engagés, sur les séries terminées.</p>
+            <p class="note">Bénéfice = kamas encaissés − kamas engagés, sur les séries vendues. Les runes pas encore vendues ne comptent qu'une fois vendues.</p>
           </div>
         </div>
       </section>
@@ -273,7 +273,7 @@
         <div class="panel plan">
           <div class="panel-head"><h2>Que faire avec mon budget ?</h2><span class="sub">La combinaison qui rapporte le plus</span></div>
           <div class="plan-ctl">
-            <div class="field"><label for="budget">Budget (kamas)</label><input id="budget" class="num keep" type="number" min="0" step="100000" value="10000000"></div>
+            <div class="field"><label for="budget">Mes kamas (total)</label><input id="budget" class="num keep" type="number" min="0" step="100000" value="10000000"></div>
             <div class="field"><label for="maxq">Max par item</label><input id="maxq" class="num keep" type="number" min="1" max="50" step="1" value="5"></div>
             <div class="field adv"><label for="dropPct" title="De combien baisse la valeur à chaque exemplaire supplémentaire du même item">Baisse par exemplaire %</label><input id="dropPct" class="num keep" type="number" min="0" max="50" step="0.5" value="0"></div>
             <label class="chk"><input type="checkbox" id="planAll" class="keep"><span>Chercher aussi parmi tous les items dont je connais les prix</span></label>

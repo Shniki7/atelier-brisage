@@ -120,12 +120,13 @@ function statsOf(s, M = S) {
 }
 const pillCls = r => r == null ? "p-na" : r < 0 ? "p-neg" : r >= 1.5 ? "p-great" : r >= .6 ? "p-ok" : "p-low";
 const pillTxt = r => (r >= 0 ? "+" : "") + Math.round(r * 100) + " %";
+// Une série est « terminée » quand ses kamas sont revenus (Vendu, montant encaissé).
+// Des runes brisées mais pas vendues restent « en cours » : leur valeur estimée est un gain latent, pas un bénéfice.
 function realize(e) {
-  const enc = +e.encaisse || 0, rn = +e.runes || 0;
-  if (enc > 0) return { date: e.vente || e.brisage || e.achat, ventes: enc };
-  if (rn > 0) return { date: e.brisage || e.achat, ventes: rn };
-  return null;
+  const enc = +e.encaisse || 0;
+  return enc > 0 ? { date: e.vente || e.brisage || e.achat, ventes: enc } : null;
 }
+function latent(e, M = S) { return !(+e.encaisse > 0) && +e.runes > 0 ? Math.round(+e.runes * (1 - taxe(M))) : null; }
 function byItem(list) {
   const by = new Map();
   for (const e of list) {
@@ -520,7 +521,9 @@ function allKnownItems() {
   allCache = { key, list }; return list;
 }
 function renderPlan(rows) {
-  const budget = Math.max(0, +$("#budget").value || 0), maxq = Math.max(1, Math.min(50, Math.floor(+$("#maxq").value || 1)));
+  // mêmes kamas que la page « Mes kamas » : le total, moins ce qui est déjà engagé dans des séries en cours
+  const engaged = isMe() ? S.journal.filter(e => !(+e.encaisse > 0)).reduce((x, e) => x + (+e.cout || 0), 0) : 0;
+  const budget = Math.max(0, (+$("#budget").value || 0) - engaged), maxq = Math.max(1, Math.min(50, Math.floor(+$("#maxq").value || 1)));
   const drop = Math.min(50, Math.max(0, +$("#dropPct").value || 0)) / 100, all = $("#planAll").checked;
   let cands = rows.filter(r => r.ok && r.benef > 0);
   if (all) cands = cands.concat(allKnownItems());
@@ -536,7 +539,7 @@ function renderPlan(rows) {
   $("#tRoi").textContent = inv ? pillTxt(ben / inv) : "–";
   $("#planGain").hidden = !(picks.length && ben - simple > Math.max(1, ben * 0.005));
   $("#planGain").innerHTML = `Cette combinaison rapporte <b>${fmt(ben - simple)}</b> de plus que de prendre les items par ordre de rendement.`;
-  $("#planInfo").textContent = cands.length ? `Calculé parmi ${cands.length} item${cands.length > 1 ? "s" : ""} rentable${cands.length > 1 ? "s" : ""}${all ? ` (dont ${allKnownItems().length} que tu ne suis pas, comptés au coefficient 100 %)` : ""}. Au plus ${maxq} exemplaire${maxq > 1 ? "s" : ""} par item pour ne pas faire chuter le coefficient ou le prix.` : "";
+  $("#planInfo").textContent = (engaged ? `Kamas disponibles : ${fmt(budget)} (${fmt(engaged)} déjà engagés dans tes séries en cours). ` : "") + (cands.length ? `Calculé parmi ${cands.length} item${cands.length > 1 ? "s" : ""} rentable${cands.length > 1 ? "s" : ""}${all ? ` (dont ${allKnownItems().length} que tu ne suis pas, comptés au coefficient 100 %)` : ""}. Au plus ${maxq} exemplaire${maxq > 1 ? "s" : ""} par item pour ne pas faire chuter le coefficient ou le prix.` : "");
 }
 
 // ----- Aujourd'hui : le cycle Préparer → Décider → Exécuter → Analyser
@@ -591,10 +594,12 @@ function renderHome() {
   const from = homePer === "tout" ? null : GR[homePer].start(new Date());
   let inv = 0, back = 0, n = 0;
   for (const e of S.journal) { const R = realize(e); if (!R) continue; const d = pD(R.date); if (from && !(d && d >= from)) continue; inv += +e.cout || 0; back += R.ventes; n++; }
-  const ben = back - inv;
+  const ben = back - inv, lat = { n: 0, g: 0 };
+  for (const e of S.journal) { const v = latent(e); if (v != null) { lat.n++; lat.g += v - (+e.cout || 0); } }
   $("#homeBen").textContent = (ben > 0 ? "+" : "") + fmt(ben); $("#homeBen").style.color = ben < 0 ? "var(--bad)" : ben > 0 ? "var(--good)" : "var(--fg)";
   $("#homeBenKv").innerHTML = `<li><span>Kamas engagés</span><b class="mono">${fmt(inv)}</b></li><li><span>Kamas récupérés</span><b class="mono">${fmt(back)}</b></li>
-    <li><span>Rendement</span><b class="mono">${inv ? pillTxt(ben / inv) : "–"}</b></li><li><span>Séries terminées</span><b class="mono">${n}</b></li>
+    <li><span>Rendement</span><b class="mono">${inv ? pillTxt(ben / inv) : "–"}</b></li><li><span>Séries vendues</span><b class="mono">${n}</b></li>
+    ${lat.n ? `<li><span title="Runes brisées pas encore vendues, valeur estimée moins la taxe, moins leur coût">Runes à vendre (gain estimé)</span><b class="mono">${lat.g > 0 ? "+" : ""}${fmt(lat.g)}</b></li>` : ""}
     <li><span></span><button class="linkish" data-goto="dash" type="button">Voir les graphiques</button></li>`;
 }
 // ----- panier : la liste de ce que je veux faire, avant de lancer les séries
@@ -816,7 +821,7 @@ function renderJr() {
   keepFocus(() => {
     $("#jr").innerHTML = J.length ? J.map(e => {
       const sg = stratOf(e.src, e.dest), rev = sg.dest === "revente", R = realize(e);
-      const ben = R ? R.ventes - (+e.cout || 0) : null, roi = R && e.cout > 0 ? ben / e.cout : null;
+      const Lt = R ? null : latent(e), ben = R ? R.ventes - (+e.cout || 0) : Lt != null ? Lt - (+e.cout || 0) : null, roi = ben != null && e.cout > 0 ? ben / e.cout : null;
       const step = +e.encaisse > 0 ? ["s-done", "Vendu"] : +e.runes > 0 ? ["s-brk", "Brisé, runes à vendre"] : rev ? ["s-run", "À revendre"] : ["s-run", "À briser"];
       const act = +e.encaisse > 0 ? "" : (rev || +e.runes > 0)
         ? `<button class="quick own-only" data-quick="vendu" data-jid="${e._id}" title="Raccourci : V">Vendu</button>`
@@ -828,7 +833,7 @@ function renderJr() {
         <td class="m">${e.qte || 1}</td><td class="m">${fmt(+e.cout || 0)}</td>
         <td class="l"><span class="status ${step[0]}">${step[1]}</span></td>
         <td class="l">${act}</td>
-        <td class="m ${ben < 0 ? "neg" : ben > 0 ? "pos" : ""}">${R ? `<b>${ben > 0 ? "+" : ""}${fmt(ben)}</b> ${roi != null ? `<span class="pill ${pillCls(roi)}">${pillTxt(roi)}</span>` : ""}${+e.encaisse > 0 ? "" : '<small class="note" style="display:block">estimé</small>'}` : "–"}</td>
+        <td class="m ${ben < 0 ? "neg" : ben > 0 ? "pos" : ""}">${ben != null ? `<b>${ben > 0 ? "+" : ""}${fmt(ben)}</b> ${roi != null ? `<span class="pill ${pillCls(roi)}">${pillTxt(roi)}</span>` : ""}${+e.encaisse > 0 ? "" : '<small class="note" style="display:block">estimé</small>'}` : "–"}</td>
         <td class="acts"><button class="ghost" data-jedit="${e._id}" type="button" aria-expanded="${isOpen}">${isOpen ? "Fermer" : "Détails"}</button></td></tr>
         ${isOpen ? `<tr class="detail"><td colspan="7"><div class="jedit">
           ${inp("qte", "Quantité", "number")}${inp("cout", "Coût total", "number")}${inp("achat", "Date d'achat", "date")}
@@ -992,10 +997,10 @@ function renderHeat(J) {
 function renderAlerts(J) {
   const A = []; const now = new Date(); const days = s => { const d = pD(s); return d ? Math.floor((now - d) / 864e5) : 0; };
   const pl = (n, s, p) => n > 1 ? p : s;
-  const dorm = J.filter(e => !realize(e) && days(e.achat) > 7);
+  const dorm = J.filter(e => !realize(e) && !(+e.runes > 0) && days(e.achat) > 7);
   if (dorm.length) A.push(["c-warn", "Stock", `${dorm.length} ${pl(dorm.length, "série achetée", "séries achetées")} il y a plus de 7 jours ${pl(dorm.length, "attend", "attendent")} d'être ${pl(dorm.length, "brisée", "brisées")} : ${fmt(dorm.reduce((a, e) => a + (+e.cout || 0), 0))} kamas immobilisés.`]);
   const unsold = J.filter(e => !(+e.encaisse > 0) && +e.runes > 0 && days(e.brisage) > 5);
-  if (unsold.length) A.push(["c-info", "Runes", `${unsold.length} ${pl(unsold.length, "brisage", "brisages")} de plus de 5 jours sans vente saisie : leurs runes sont comptées à leur valeur estimée.`]);
+  if (unsold.length) A.push(["c-info", "Runes", `${unsold.length} ${pl(unsold.length, "brisage", "brisages")} de plus de 5 jours sans vente saisie : leurs runes ne comptent pas encore dans le bénéfice.`]);
   const est = new Map(S.suivi.map(s => [s.id, statsOf(s).roi]));
   for (const o of byItem(J)) {
     const r = o.rows.sort((a, b) => a.d.localeCompare(b.d));
