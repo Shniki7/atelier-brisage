@@ -584,7 +584,7 @@ function renderHome() {
 }
 
 // ----- Familiers : XP par ressource (moi > groupe > guide) et coût pour atteindre un niveau
-const resName = id => D.allres?.[id] || D.res?.[id] || "Ressource " + id;
+const resName = id => D.allres?.[id] || D.res?.[id] || D.xptable?.names?.[id] || "Ressource " + id;
 function xpInfo(id, M = S) {
   const v = +M.xp?.[id]; if (v > 0) return { v, src: "moi" };
   const vals = []; for (const [, m] of MEMBERS) { if (m === M) continue; const x = +m.xp?.[id]; if (x > 0) vals.push(x); }
@@ -1223,6 +1223,9 @@ function parseXpTable(txt) {
     // ligne d'en-tête : repérer la colonne de l'XP
     const h = cells.findIndex(c => /^(xp|exp|experience|expérience)\b/i.test(c) || /\bxp\b/i.test(c));
     if (h >= 0 && !cells.some(c => idOf(c))) { xpCol = h; continue; }
+    // format « XP <tab> nom1, nom2, nom3 » (table du Dofus Wiki) : plusieurs ressources par ligne
+    const multi = cells.length === 2 && numOf(cells[0]) != null && cells[1].includes(",") ? cells[1].split(/,\s*/).map(x => x.trim()).filter(Boolean) : null;
+    if (multi) { const v0 = numOf(cells[0]); for (const n of multi) { const x = idOf(n); if (x && v0 > 0) ok[x] = v0; else if (!x) miss.push(n); } continue; }
     let id = null, ni = -1;
     for (let i = 0; i < cells.length && !id; i++) { const x = idOf(cells[i]); if (x) { id = x; ni = i; } }
     let v = null;
@@ -1233,6 +1236,7 @@ function parseXpTable(txt) {
       const m = line.match(/^(.*\S)\s+(-?\d[\d\s.,]*)\s*(xp)?$/i);
       if (m) { id = idOf(m[1]); v = numOf(m[2]); if (!id) { miss.push(m[1]); continue; } }
     } else { const nm0 = cells.find(c => c && numOf(c) == null); if (nm0 && cells.some(c => numOf(c) != null)) miss.push(nm0); continue; }
+    if (id && v == null && ni > 0) for (let i = ni - 1; i >= 0; i--) { const x = numOf(cells[i]); if (x != null) { v = x; break; } }
     if (id && v > 0) ok[id] = v;
   }
   return { ok, miss };
