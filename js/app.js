@@ -71,8 +71,10 @@ function runeLines(s, M = S) {
 }
 function estBrk(s, M = S) {
   const L = runeLines(s, M); if (!L.length) return { val: null, miss: 0, none: true, lines: L };
-  const miss = L.filter(l => l.prix == null).length;
-  return { val: miss ? null : L.reduce((a, l) => a + l.val, 0), miss, lines: L };
+  const miss = L.filter(l => l.prix == null).length; const part = L.reduce((a, l) => a + (l.val || 0), 0);
+  // trier les runes : d'abord celles qui pèsent le plus (valeur connue, sinon nombre de runes × poids)
+  L.sort((x, y) => (y.val ?? -1) - (x.val ?? -1) || (y.runes * y.pts) - (x.runes * x.pts));
+  return { val: miss ? null : part, part, miss, lines: L };
 }
 function statsOf(s, M = S) {
   const { cost, miss } = costOf(s, M); const est = estBrk(s, M);
@@ -305,7 +307,7 @@ function renderCrafts() {
       const nm = r.it ? r.it.n : "Item retiré du jeu", isOpen = open.has(r.s.id);
       const why = r.miss ? `${r.miss} prix de ressource${r.miss > 1 ? "s" : ""}` : !r.brk ? (r.est.none ? "brisage à saisir" : `${r.est.miss} prix de rune${r.est.miss > 1 ? "s" : ""}`) : "";
       const roiCell = r.ok ? `<span class="pill ${pillCls(r.roi)}">${pillTxt(r.roi)}</span>` : `<span class="pill p-na" title="Il manque : ${why}">${why}</span>`;
-      const ph = r.est.val ? "≈ " + fmt(r.est.val) : "kamas";
+      const ph = r.est.val ? "≈ " + fmt(r.est.val) : r.est.part ? "≥ " + kfmt(r.est.part) : "kamas";
       let html = `<tr class="item ${isOpen ? "open" : ""}" data-id="${r.s.id}">
         <td class="l"><div class="iname"><span class="chev">›</span><span>${esc(nm)}<small>${r.it ? `Niv. ${r.it.l} · ${esc(D.types[r.it.t] || "")} · ${esc(r.it.j)}` : ""}${r.s.r ? " · recette modifiée" : ""}</small></span></div></td>
         <td class="m">${r.miss ? (r.cost ? `<span class="neg" title="Coût partiel : prix manquants">≥ ${fmt(r.cost)}</span>` : `<span class="note">–</span>`) : fmt(r.cost)}</td>
@@ -314,7 +316,7 @@ function renderCrafts() {
           <small class="note src">${r.src ? r.src + (tx ? ` · net ${fmt(r.brk)}` : "") : ""}</small></td>
         <td class="m ${r.benef < 0 ? "neg" : r.benef > 0 ? "pos" : ""}">${r.ok ? fmt(r.benef) : "–"}</td>
         <td>${roiCell}</td>
-        <td class="acts"><button class="ghost own-only" data-serie="${r.s.id}" title="Ajouter une série de cet item au journal (raccourci : S sur la ligne)">+ Série</button><button class="ghost x" data-del="${r.s.id}" title="Retirer de la liste" aria-label="Retirer ${esc(nm)}">×</button></td></tr>`;
+        <td class="acts"><button class="ghost own-only" data-serie="${r.s.id}" title="Ajouter une série de cet item au journal">+&nbsp;Série</button><button class="ghost x" data-del="${r.s.id}" title="Retirer de la liste" aria-label="Retirer ${esc(nm)}">×</button></td></tr>`;
       if (isOpen) {
         const rec = recipeOf(r.s);
         html += `<tr class="detail"><td colspan="7"><div class="detail-grid">
@@ -326,7 +328,7 @@ function renderCrafts() {
             <input class="num ${p > 0 || free ? "" : "miss"}" id="p-${r.s.id}-${rid}" data-price="${rid}" data-col="pp-${r.s.id}" type="number" min="0" value="${p || ""}" placeholder="${free ? "0 (récoltée)" : "prix"}" aria-label="Prix de ${esc(D.res[rid] || "")}">
             <span class="st">${u != null ? fmt(u * q) : "–"}</span>
             <button class="ghost x" data-rdel="${r.s.id}" data-k="${k}" aria-label="Retirer l'ingrédient" title="Retirer l'ingrédient">×</button></div>`; }).join("")}
-          <div class="rfoot"><span class="note">Coût : <b class="mono">${fmt(r.cost)}</b>${r.miss ? ` (${r.miss} prix manquant${r.miss > 1 ? "s" : ""})` : ""}</span>
+          <div class="rfoot"><span class="note">Coût : ${r.miss ? (r.cost ? `au moins <b class="mono">${fmt(r.cost)}</b>` : "inconnu") + ` · ${r.miss} prix manquant${r.miss > 1 ? "s" : ""}` : `<b class="mono">${fmt(r.cost)}</b>`}</span>
             ${r.s.r ? `<button class="ghost" data-rreset="${r.s.id}">Revenir à la recette du jeu</button>` : ""}</div></div>
           ${r.est.lines.length ? `<div class="recipe">
             <div class="rrow runes rhead"><span>Rune obtenue (jet moyen)</span><span style="text-align:right">Runes</span><span style="text-align:right">Prix rune</span><span style="text-align:right">Valeur</span></div>
@@ -334,7 +336,9 @@ function renderCrafts() {
               <span class="st">${l.runes.toLocaleString("fr-FR", { maximumFractionDigits: 1 })}</span>
               <input class="num ${l.prix ? "" : "miss"}" id="rup-${r.s.id}-${l.a}" data-runep="${l.a}" data-col="rup-${r.s.id}" type="number" min="0" value="${l.prix || ""}" placeholder="prix" aria-label="Prix de la rune ${esc(l.nom)}">
               <span class="st">${l.val != null ? fmt(l.val) : "–"}</span></div>`).join("")}
-            <div class="rfoot"><span class="note">Brisage estimé : <b class="mono">${r.est.val ? fmt(r.est.val) : "–"}</b> au coefficient ${r.s.coef ?? 100} %${tx ? `, soit ${fmt((r.est.val || 0) * (1 - tx))} après ${Math.round(tx * 1000) / 10} % de taxe` : ""}.</span></div>
+            <div class="rfoot"><span class="note">${r.est.val
+              ? `Brisage estimé : <b class="mono">${fmt(r.est.val)}</b> au coefficient ${r.s.coef ?? 100} %${tx ? `, soit <b class="mono">${fmt(r.est.val * (1 - tx))}</b> après ${Math.round(tx * 1000) / 10} % de taxe` : ""}.`
+              : `Brisage estimé : au moins <b class="mono">${fmt(r.est.part)}</b> · ${r.est.miss} prix de rune${r.est.miss > 1 ? "s" : ""} manquant${r.est.miss > 1 ? "s" : ""}. Les runes sont triées de la plus importante à la moins importante : commence par le haut.`}</span></div>
           </div>` : `<p class="note">Pas d'effets connus pour cet item : saisis sa valeur de brisage à la main.</p>`}
           </div></td></tr>`;
       }
