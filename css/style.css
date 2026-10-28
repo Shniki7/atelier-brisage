@@ -525,6 +525,10 @@ tr.open .cat-n .chev{transform:rotate(90deg)}
 tr.cat-rec td{background:var(--surface-2);padding:6px 14px 10px}
 .cat-more{display:flex;justify-content:center}.cat-more:empty{display:none}
 
+.s-row{grid-template-columns:1fr 1.4fr}
+.jhist{grid-column:1/-1;display:flex;flex-direction:column;gap:3px;font-size:12.5px;color:var(--muted);font-family:var(--mono)}
+td.acts .quick+.quick,td.l .quick+.quick{margin-left:6px}
+
 /* ---------- lecture seule ---------- */
 body.ro .own-only{display:none!important}
 

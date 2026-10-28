@@ -7,7 +7,7 @@ Outil de rentabilité du craft et du brisage pour **Dofus 3**, à partager entre
 - **Mes kamas** (page d'accueil) : 1. les kamas que j'engage → 2. mon panier (je cherche un item, je choisis le moyen et la quantité, l'outil calcule ce que j'engage et ce que je gagne, puis « Lancer le panier ») avec des idées si besoin → 3. ce qui est en cours → 4. mon bénéfice.
 - **Opportunités** : pour chaque item suivi, la meilleure des 4 options (crafter ou acheter, puis briser ou revendre), avec un indice de fiabilité. Le plan pour ton budget est dans « Mes kamas › Des idées ? ».
 - **Prix du marché** : tous tes prix au même endroit (ressources, runes, items), avec les prix proposés par ton groupe.
-- **Mes séries** : chaque série, de l'achat à la vente, avec un bouton par étape (Brisé, Vendu).
+- **Mes séries** : chaque série, de l'achat à la vente, avec un bouton par étape : Brisé, Mettre en vente / Baisser le prix (la taxe HDV est repayée à chaque fois et ajoutée au coût), Vendu… (combien, à quel prix, date et heure : les ventes partielles sont gérées).
 - **Résultats** : bénéfice par jour, semaine, mois ou année, rendement réel par item, calendrier d'activité et alertes. Le bénéfice ne compte que les kamas encaissés ; des runes pas encore vendues restent « en cours ».
 - **Familiers** : XP à donner selon la courbe officielle, et la ressource la moins chère pour 1 000 XP (XP par ressource partagées dans le groupe).
 - **Le groupe** : chacun a son profil et voit les bilans et le journal des autres, en lecture seule.

@@ -435,6 +435,25 @@
   </div>
 </div>
 
+<div class="modal" id="sellPanel" hidden>
+  <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="sT">
+    <div class="panel-head"><h2 id="sT">J'ai vendu</h2><button class="ghost x" type="button" data-close aria-label="Fermer">×</button></div>
+    <form id="sForm" class="lform" novalidate>
+      <p class="l-item" id="sItem"></p>
+      <div class="l-row s-row" id="sRev">
+        <div class="field"><label for="sQ" id="sQl">Combien vendus</label><input id="sQ" class="num" type="number" min="1" value="1"></div>
+        <div class="field"><label for="sP" id="sPl">Prix de vente unitaire</label><input id="sP" class="num" type="text" inputmode="decimal" autocomplete="off" placeholder="ex. 999 998 ou 1m"></div>
+      </div>
+      <div id="sRun" hidden><div class="field"><label for="sK" id="sKl">Kamas reçus</label><input id="sK" class="num" type="text" inputmode="decimal" autocomplete="off" placeholder="ex. 250k"></div></div>
+      <label class="chk" id="sAllW" hidden><input type="checkbox" id="sAll"><span>Toutes les runes sont vendues (la série est terminée)</span></label>
+      <div class="field" id="sDW"><label for="sD">Date et heure</label><input id="sD" type="datetime-local"></div>
+      <div class="l-sum" id="sSum"></div>
+      <p class="note">La taxe HDV se paie à chaque mise en vente et à chaque baisse de prix : elle s'ajoute au coût de la série. Une vente sans mise en vente notée compte la taxe automatiquement.</p>
+      <div class="l-actions"><button type="button" class="ghost" data-close>Annuler</button><button class="primary" type="submit">Enregistrer</button></div>
+    </form>
+  </div>
+</div>
+
 <div class="modal" id="launchPanel" hidden>
   <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="lT">
     <div class="panel-head"><h2 id="lT">Lancer une série</h2><button class="ghost x" type="button" data-close aria-label="Fermer">×</button></div>

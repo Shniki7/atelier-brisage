@@ -3,7 +3,8 @@
      profiles/{uid}                 pseudo, serveur, code, createdAt
      profiles/{uid}/data/prix       { p: {idRessource: prix}, m: {idRessource: "AAAA-MM-JJ"} }
      profiles/{uid}/data/suivi      { items: [{ id, brk, r? }] }
-     profiles/{uid}/data/journal    toutes les séries : items [{_id, item, nom, qte, cout, achat, brisage, runes, vente, encaisse, src, dest}]
+     profiles/{uid}/data/journal    toutes les séries : items [{_id, item, nom, qte, cout, achat, brisage, runes, vente, encaisse, src, dest,
+                                     frais (taxes de mise en vente), lv (valeur en vente), mev [{d,q,p,v,f}], ventes [{d,q,p,k}], fini}]
      (les anciennes versions rangeaient une série par document dans profiles/{uid}/journal : converti automatiquement)
 */
 "use strict";
@@ -125,17 +126,33 @@ const pillCls = r => r == null ? "p-na" : r < 0 ? "p-neg" : r >= 1.5 ? "p-great"
 const pillTxt = r => (r >= 0 ? "+" : "") + Math.round(r * 100) + " %";
 // Une série est « terminée » quand ses kamas sont revenus (Vendu, montant encaissé).
 // Des runes brisées mais pas vendues restent « en cours » : leur valeur estimée est un gain latent, pas un bénéfice.
-function realize(e) {
-  const enc = +e.encaisse || 0;
-  return enc > 0 ? { date: e.vente || e.brisage || e.achat, ventes: enc } : null;
+function seriesActs(e, attr) {
+  if (isDone(e)) return "";
+  const rev = stratOf(e.src, e.dest).dest === "revente", b = (k, t, tip) => `<button class="quick own-only" ${attr}="${k}" data-jid="${e._id}" type="button"${tip ? ` title="${tip}"` : ""}>${t}</button>`;
+  if (!rev && !(+e.runes > 0)) return b("brise", "Brisé", "Raccourci : B");
+  return b("mev", (+e.lv > 0 ? "Baisser le prix" : "Mettre en vente"), "Chaque mise en vente ou baisse de prix repaie la taxe HDV") + b("vendu", "Vendu…", "Raccourci : V");
 }
-function latent(e, M = S) { return !(+e.encaisse > 0) && +e.runes > 0 ? Math.round(+e.runes * (1 - taxe(M))) : null; }
+function seriesStep(e) {
+  const rev = stratOf(e.src, e.dest).dest === "revente", q = vendusQ(e), n = e.qte || 1;
+  if (isDone(e)) return ["s-done", "Vendu"];
+  if (rev && q > 0) return ["s-brk", `${q}/${n} vendu${q > 1 ? "s" : ""}`];
+  if (!rev && (e.ventes || []).length) return ["s-brk", "Runes en partie vendues"];
+  if (+e.lv > 0) return ["s-brk", "En vente"];
+  return +e.runes > 0 ? ["s-brk", "Brisé, runes à vendre"] : rev ? ["s-run", "À revendre"] : ["s-run", "À briser"];
+}
+// Une série est terminée quand tout est vendu (e.fini). Anciennes séries : dès qu'un montant encaissé est saisi.
+function isDone(e) { return e.fini === true || (e.fini === undefined && !e.ventes && +e.encaisse > 0); }
+function realize(e) { return isDone(e) ? { date: e.vente || e.brisage || e.achat, ventes: +e.encaisse || 0 } : null; }
+// coût total = achat ou craft + taxes de mise en vente payées (chaque remise en vente repaie la taxe)
+function coutT(e) { return (+e.cout || 0) + (+e.frais || 0); }
+const vendusQ = e => (e.ventes || []).reduce((a, v) => a + (+v.q || 0), 0);
+function latent(e, M = S) { return !isDone(e) && +e.runes > 0 ? Math.round(+e.runes * (1 - taxe(M))) : null; }
 function byItem(list) {
   const by = new Map();
   for (const e of list) {
     const R = realize(e); if (!R) continue;
     const o = by.get(e.nom) || { k: e.nom, item: e.item, n: 0, inv: 0, rn: 0, rows: [] };
-    o.n++; o.inv += +e.cout || 0; o.rn += R.ventes; o.rows.push({ d: R.date, roi: e.cout > 0 ? (R.ventes - e.cout) / e.cout : 0 }); by.set(e.nom, o);
+    o.n++; o.inv += coutT(e); o.rn += R.ventes; o.rows.push({ d: R.date, roi: coutT(e) > 0 ? (R.ventes - coutT(e)) / coutT(e) : 0 }); by.set(e.nom, o);
   }
   return [...by.values()].map(o => ({ ...o, roi: o.inv ? (o.rn - o.inv) / o.inv : null })).sort((a, b) => (b.roi ?? -9) - (a.roi ?? -9));
 }
@@ -297,7 +314,7 @@ function setView(uid) {
 }
 function weekBen(m) {
   const from = GR.semaine.start(new Date()); let b = 0;
-  for (const e of m.journal) { const R = realize(e); const d = R && pD(R.date); if (d && d >= from) b += R.ventes - (+e.cout || 0); }
+  for (const e of m.journal) { const R = realize(e); const d = R && pD(R.date); if (d && d >= from) b += R.ventes - (coutT(e)); }
   return b;
 }
 function renderHeader() {
@@ -339,7 +356,7 @@ function render() {
   $("#cCrafts").textContent = S.suivi.length;
   const nMiss = neededRes().filter(([rid]) => priceInfo(rid).v == null).length + neededRunes().filter(([a]) => runePriceInfo(a).v == null).length;
   $("#cRes").textContent = nMiss || "✓"; $("#cRes").title = nMiss ? `${nMiss} prix à compléter` : "Tous les prix sont renseignés";
-  const nRun = S.journal.filter(e => !(+e.encaisse > 0)).length;
+  const nRun = S.journal.filter(e => !isDone(e)).length;
   $("#cJr").textContent = nRun; $("#cJr").title = `${nRun} série(s) en cours`;
   if (tab === "home") renderHome();
   if (tab === "pet") renderPet();
@@ -431,7 +448,7 @@ function missingFor(s, st) {
 }
 function realOf(itemId, M = S) {
   const L = M.journal.filter(e => e.item === itemId && realize(e)); if (!L.length) return null;
-  const inv = L.reduce((a, e) => a + (+e.cout || 0), 0), rn = L.reduce((a, e) => a + realize(e).ventes, 0);
+  const inv = L.reduce((a, e) => a + (coutT(e)), 0), rn = L.reduce((a, e) => a + realize(e).ventes, 0);
   return { n: L.length, roi: inv ? (rn - inv) / inv : null, ben: rn - inv };
 }
 function renderStart() {
@@ -540,7 +557,7 @@ function cycleState() {
   const miss = res.filter(([rid]) => priceInfo(rid).v == null).length + runes.filter(([a]) => runePriceInfo(a).v == null).length;
   const stale = res.filter(([rid]) => +S.prix[rid] > 0 && ageDays(S.maj[rid]) > 7).length + runes.filter(([a]) => +S.rp[a] > 0 && ageDays(S.rm[a]) > 7).length;
   const plan = planFor(st);
-  const open = S.journal.filter(e => !(+e.encaisse > 0));
+  const open = S.journal.filter(e => !isDone(e));
   const toBreak = open.filter(e => stratOf(e.src, e.dest).dest === "brisage" && !(+e.runes > 0));
   const toSell = open.filter(e => !toBreak.includes(e));
   const launchedToday = S.journal.filter(e => e.achat === today()).length;
@@ -553,7 +570,7 @@ function renderHome() {
   // 1. mes kamas
   const cap = Math.max(0, +lsGet("budget") || 0);
   if (document.activeElement !== $("#homeCap")) $("#homeCap").value = cap || "";
-  const engaged = c.open.reduce((a, e) => a + (+e.cout || 0), 0), free = Math.max(0, cap - engaged);
+  const engaged = c.open.reduce((a, e) => a + (coutT(e)), 0), free = Math.max(0, cap - engaged);
   $("#homeCapKv").innerHTML = `<li><span>Déjà engagés (en cours)</span><b class="mono">${fmt(engaged)}</b></li><li><span>Encore disponibles</span><b class="mono">${fmt(free)}</b></li>`;
   // 2. mon panier
   renderCart(free);
@@ -569,18 +586,18 @@ function renderHome() {
   $("#homeTodo").innerHTML = todo.length ? todo.slice(0, 12).map(e => {
     const sg = stratOf(e.src, e.dest), brk = c.toBreak.includes(e), age = ageDays(e.achat);
     return `<tr><td class="l"><b>${e.qte || 1} × ${esc(e.nom)}</b><small class="strat">${stratTxt(sg)} · lancé ${age === 0 ? "aujourd'hui" : age === 1 ? "hier" : `il y a ${age} jours`}${age > 7 ? ' <span class="miss-t">· kamas qui dorment</span>' : ""}</small></td>
-      <td class="m">${fmt(+e.cout || 0)}</td>
-      <td class="l"><span class="status ${brk ? "s-run" : "s-brk"}">${brk ? "À briser" : "À vendre"}</span></td>
-      <td class="acts">${me ? `<button class="quick" data-hquick="${brk ? "brise" : "vendu"}" data-jid="${e._id}">${brk ? "Brisé" : "Vendu"}</button>` : ""}</td></tr>`;
+      <td class="m">${fmt(coutT(e))}</td>
+      <td class="l"><span class="status ${seriesStep(e)[0]}">${seriesStep(e)[1]}</span></td>
+      <td class="acts">${me ? seriesActs(e, "data-hquick") : ""}</td></tr>`;
   }).join("") + (todo.length > 12 ? `<tr><td colspan="4" class="note"><button class="linkish" data-goto="jr" type="button">Voir les ${todo.length} séries</button></td></tr>` : "")
     : `<tr><td class="empty">Rien en cours. Clique « Lancer » sur une ligne de l'étape 2.</td></tr>`;
   // 4. ligne d'arrivée
   document.querySelectorAll("#homePer [data-hp]").forEach(b => b.setAttribute("aria-pressed", b.dataset.hp === homePer));
   const from = homePer === "tout" ? null : GR[homePer].start(new Date());
   let inv = 0, back = 0, n = 0;
-  for (const e of S.journal) { const R = realize(e); if (!R) continue; const d = pD(R.date); if (from && !(d && d >= from)) continue; inv += +e.cout || 0; back += R.ventes; n++; }
+  for (const e of S.journal) { const R = realize(e); if (!R) continue; const d = pD(R.date); if (from && !(d && d >= from)) continue; inv += coutT(e); back += R.ventes; n++; }
   const ben = back - inv, lat = { n: 0, g: 0 };
-  for (const e of S.journal) { const v = latent(e); if (v != null) { lat.n++; lat.g += v - (+e.cout || 0); } }
+  for (const e of S.journal) { const v = latent(e); if (v != null) { lat.n++; lat.g += v - (coutT(e)); } }
   $("#homeBen").textContent = (ben > 0 ? "+" : "") + fmt(ben); $("#homeBen").style.color = ben < 0 ? "var(--bad)" : ben > 0 ? "var(--good)" : "var(--fg)";
   $("#homeBenKv").innerHTML = `<li><span>Kamas engagés</span><b class="mono">${fmt(inv)}</b></li><li><span>Kamas récupérés</span><b class="mono">${fmt(back)}</b></li>
     <li><span>Rendement</span><b class="mono">${inv ? pillTxt(ben / inv) : "–"}</b></li><li><span>Séries vendues</span><b class="mono">${n}</b></li>
@@ -843,37 +860,33 @@ function renderJr() {
   if (!$("#jCost").dataset.touched) prefillCost();
   document.querySelectorAll("[data-jf]").forEach(b => b.setAttribute("aria-pressed", b.dataset.jf === jFilter));
   const all = [...S.journal].sort((a, b) => (b.achat || "").localeCompare(a.achat || ""));
-  const done = all.filter(e => realize(e) && (+e.encaisse > 0 || stratOf(e.src, e.dest).dest === "brisage"));
-  const isDone = e => +e.encaisse > 0;
   const J = all.filter(e => jFilter === "all" || (jFilter === "done" ? isDone(e) : !isDone(e)));
   keepFocus(() => {
     $("#jr").innerHTML = J.length ? J.map(e => {
       const sg = stratOf(e.src, e.dest), rev = sg.dest === "revente", R = realize(e);
-      const Lt = R ? null : latent(e), ben = R ? R.ventes - (+e.cout || 0) : Lt != null ? Lt - (+e.cout || 0) : null, roi = ben != null && e.cout > 0 ? ben / e.cout : null;
-      const step = +e.encaisse > 0 ? ["s-done", "Vendu"] : +e.runes > 0 ? ["s-brk", "Brisé, runes à vendre"] : rev ? ["s-run", "À revendre"] : ["s-run", "À briser"];
-      const act = +e.encaisse > 0 ? "" : (rev || +e.runes > 0)
-        ? `<button class="quick own-only" data-quick="vendu" data-jid="${e._id}" title="Raccourci : V">Vendu</button>`
-        : `<button class="quick own-only" data-quick="brise" data-jid="${e._id}" title="Raccourci : B">Brisé</button>`;
+      const Lt = R ? null : latent(e), ben = R ? R.ventes - (coutT(e)) : Lt != null ? Lt - (coutT(e)) : null, roi = ben != null && coutT(e) > 0 ? ben / coutT(e) : null;
+      const step = seriesStep(e), act = seriesActs(e, "data-quick");
       const isOpen = openJ.has(e._id);
       const inp = (f, label, type) => `<div class="field"><label for="j${f}-${e._id}">${label}</label><input ${type === "date" ? "" : 'class="num"'} id="j${f}-${e._id}" data-j="${e._id}" data-f="${f}" type="${type}" ${type === "number" ? 'min="0"' : ""} value="${esc(e[f] || "")}"></div>`;
       return `<tr class="jrow ${isOpen ? "open" : ""}" data-jid="${e._id}">
         <td class="l"><b>${esc(e.nom)}</b><small class="strat">${stratTxt(sg)} · ${fdate(e.achat)}</small></td>
-        <td class="m">${e.qte || 1}</td><td class="m">${fmt(+e.cout || 0)}</td>
+        <td class="m">${e.qte || 1}</td><td class="m">${fmt(coutT(e))}${+e.frais > 0 ? `<small class="note" style="display:block" title="Taxes de mise en vente comprises">dont ${fmt(+e.frais)} de taxes</small>` : ""}</td>
         <td class="l"><span class="status ${step[0]}">${step[1]}</span></td>
         <td class="l">${act}</td>
-        <td class="m ${ben < 0 ? "neg" : ben > 0 ? "pos" : ""}">${ben != null ? `<b>${ben > 0 ? "+" : ""}${fmt(ben)}</b> ${roi != null ? `<span class="pill ${pillCls(roi)}">${pillTxt(roi)}</span>` : ""}${+e.encaisse > 0 ? "" : '<small class="note" style="display:block">estimé</small>'}` : "–"}</td>
+        <td class="m ${ben < 0 ? "neg" : ben > 0 ? "pos" : ""}">${ben != null ? `<b>${ben > 0 ? "+" : ""}${fmt(ben)}</b> ${roi != null ? `<span class="pill ${pillCls(roi)}">${pillTxt(roi)}</span>` : ""}${R ? "" : '<small class="note" style="display:block">estimé</small>'}` : +e.encaisse > 0 ? `<small class="note">${fmt(+e.encaisse)} déjà encaissés</small>` : "–"}</td>
         <td class="acts"><button class="ghost" data-jedit="${e._id}" type="button" aria-expanded="${isOpen}">${isOpen ? "Fermer" : "Détails"}</button></td></tr>
         ${isOpen ? `<tr class="detail"><td colspan="7"><div class="jedit">
           ${inp("qte", "Quantité", "number")}${inp("cout", "Coût total", "number")}${inp("achat", "Date d'achat", "date")}
           ${rev ? "" : inp("brisage", "Date de brisage", "date") + inp("runes", "Valeur des runes", "number")}
-          ${inp("vente", "Date de vente", "date")}${inp("encaisse", "Kamas encaissés", "number")}
+          ${inp("frais", "Taxes de mise en vente", "number")}${inp("vente", "Date de dernière vente", "date")}${inp("encaisse", "Kamas encaissés", "number")}
+          ${(e.mev || []).length || (e.ventes || []).length ? `<div class="jhist">${(e.mev || []).map(m => `<span>${fdt(m.d)} · mis en vente ${m.q ? `${m.q} × ${fmt(m.p)}` : fmt(m.v)} · taxe ${fmt(m.f)}</span>`).join("")}${(e.ventes || []).map(v => `<span class="pos">${fdt(v.d)} · vendu ${v.q ? `${v.q} × ${fmt(v.p)}` : ""} = ${fmt(v.k)}</span>`).join("")}</div>` : ""}
           <div class="field"><label>&nbsp;</label><button class="ghost x own-only" data-jdel="${e._id}" type="button">Supprimer</button></div>
         </div></td></tr>` : ""}`;
     }).join("") : `<tr><td colspan="7" class="empty">${!all.length ? (isMe() ? "Aucune série. Clique « Lancer » sur un item dans Opportunités, ou ajoute-en une ci-dessus." : "Ce membre n'a encore enregistré aucune série.") : jFilter === "open" ? "Aucune série en cours." : "Aucune série terminée."}</td></tr>`;
   });
   const fin = all.filter(isDone), run = all.filter(e => !isDone(e));
-  const inv = fin.reduce((a, e) => a + (+e.cout || 0), 0), rn = fin.reduce((a, e) => a + (+e.encaisse || 0), 0);
-  const stock = run.reduce((a, e) => a + (+e.cout || 0), 0);
+  const inv = fin.reduce((a, e) => a + (coutT(e)), 0), rn = fin.reduce((a, e) => a + (+e.encaisse || 0), 0);
+  const stock = run.reduce((a, e) => a + (coutT(e)), 0);
   $("#jtot").innerHTML = `<div class="tot"><span>En cours</span><b>${fmt(stock)}</b><small class="note">${run.length} série(s) pas encore vendue(s)</small></div>
     <div class="tot"><span>Encaissé</span><b>${fmt(rn)}</b><small class="note">${fin.length} série(s) vendue(s)</small></div>
     <div class="tot big"><span>Bénéfice réel</span><b>${fin.length ? (rn - inv > 0 ? "+" : "") + fmt(rn - inv) : "–"}</b></div>
@@ -883,7 +896,7 @@ function renderJr() {
   const bs = new Map(), bi = new Map();
   for (const e of fin) {
     const k = stratTxt(stratOf(e.src, e.dest));
-    for (const [m, key] of [[bs, k], [bi, e.nom]]) { const o = m.get(key) || { k: key, n: 0, inv: 0, rn: 0 }; o.n++; o.inv += +e.cout || 0; o.rn += +e.encaisse || 0; m.set(key, o); }
+    for (const [m, key] of [[bs, k], [bi, e.nom]]) { const o = m.get(key) || { k: key, n: 0, inv: 0, rn: 0 }; o.n++; o.inv += coutT(e); o.rn += +e.encaisse || 0; m.set(key, o); }
   }
   const rowsOf = m => [...m.values()].sort((a, b) => (b.rn - b.inv) - (a.rn - a.inv)).map(o => { const roi = o.inv ? (o.rn - o.inv) / o.inv : null; return `<tr><td class="l"><b>${esc(o.k)}</b></td><td class="m">${o.n}</td><td class="m">${fmt(o.inv)}</td><td class="m">${fmt(o.rn)}</td><td class="m ${o.rn - o.inv < 0 ? "neg" : "pos"}">${fmt(o.rn - o.inv)}</td><td>${roi != null ? `<span class="pill ${pillCls(roi)}">${pillTxt(roi)}</span>` : ""}</td></tr>`; }).join("");
   $("#realPanel").hidden = !fin.length;
@@ -956,13 +969,13 @@ function renderDash() {
   const prevKey = isoD(G.add(cur, -1)); const prev = { ventes: 0, ben: 0, cout: 0 };
   for (const e of J) {
     const R = realize(e); if (!R) continue; const rd = pD(R.date); if (!rd) continue;
-    const k = isoD(G.start(rd)), i = idx.get(k), b = R.ventes - (+e.cout || 0);
-    if (i != null) { B[i].ventes += R.ventes; B[i].cout += +e.cout || 0; B[i].ben += b; B[i].n++; }
-    if (k === prevKey) { prev.ventes += R.ventes; prev.ben += b; prev.cout += +e.cout || 0; }
+    const k = isoD(G.start(rd)), i = idx.get(k), b = R.ventes - (coutT(e));
+    if (i != null) { B[i].ventes += R.ventes; B[i].cout += coutT(e); B[i].ben += b; B[i].n++; }
+    if (k === prevKey) { prev.ventes += R.ventes; prev.ben += b; prev.cout += coutT(e); }
   }
   const C = B[B.length - 1];
-  const pend = J.filter(e => !realize(e)), stock = pend.reduce((a, e) => a + (+e.cout || 0), 0);
-  const totalBen = J.reduce((a, e) => { const R = realize(e); return R ? a + R.ventes - (+e.cout || 0) : a; }, 0);
+  const pend = J.filter(e => !realize(e)), stock = pend.reduce((a, e) => a + (coutT(e)), 0);
+  const totalBen = J.reduce((a, e) => { const R = realize(e); return R ? a + R.ventes - (coutT(e)) : a; }, 0);
   $("#dashRange").textContent = `${G.full(keys[0])} → ${G.full(keys[keys.length - 1])}`;
   $("#hBen").textContent = "Bénéfice par " + G.unit;
   const delta = (a, b) => { if (!b) return a ? `<span>Rien ${G.prev}</span>` : "–"; const r = (a - b) / Math.abs(b); return `<span class="delta ${r >= 0 ? "d-up" : "d-down"}">${r >= 0 ? "▲ +" : "▼ "}${Math.round(r * 100)} %</span>vs ${G.prev}`; };
@@ -985,7 +998,7 @@ function drawDashCharts(B, G, J) {
     options: { responsive: true, maintainAspectRatio: false, animation: anim,
       plugins: { legend: { display: false }, tooltip: { ...tip, callbacks: { title: it => G.full(B[it[0].dataIndex].d), label: it => { const b = B[it.dataIndex]; return [`Bénéfice : ${fmt(b.ben)}`, `Ventes : ${fmt(b.ventes)}`, `Coût : ${fmt(b.cout)}`, `${b.n} série(s)`]; } } } },
       scales: { x: { grid: { display: false }, ticks: { maxRotation: 0, autoSkipPadding: 10 } }, y: { grid, suggestedMin: 0, suggestedMax: 1000, border: { display: false }, ticks: { padding: 8, precision: 0, callback: v => kfmt(v) } } } } });
-  const ev = J.map(e => { const R = realize(e); return R ? { d: R.date, b: R.ventes - (+e.cout || 0) } : null; }).filter(Boolean).sort((a, b) => a.d.localeCompare(b.d));
+  const ev = J.map(e => { const R = realize(e); return R ? { d: R.date, b: R.ventes - (coutT(e)) } : null; }).filter(Boolean).sort((a, b) => a.d.localeCompare(b.d));
   const pts = []; let s = 0; for (const x of ev) { s += x.b; if (pts.length && pts[pts.length - 1].d === x.d) pts[pts.length - 1].v = s; else pts.push({ d: x.d, v: s }); }
   charts.cum = new Chart($("#chCum"), { type: "line",
     data: { labels: pts.map(p => pD(p.d).toLocaleDateString("fr-FR", { day: "2-digit", month: "short" })), datasets: [{ data: pts.map(p => Math.round(p.v)), borderColor: acc, borderWidth: 2, pointRadius: 0, pointHoverRadius: 5, pointHoverBackgroundColor: acc, pointHoverBorderColor: bg, pointHoverBorderWidth: 2, tension: .25, fill: { target: "origin", above: hexA(acc, .14), below: hexA(bad, .14) } }] },
@@ -1006,7 +1019,7 @@ function renderItemBars(J) {
 }
 function renderHeat(J) {
   const day = new Map();
-  for (const e of J) { const R = realize(e); if (!R) continue; day.set(R.date, (day.get(R.date) || 0) + R.ventes - (+e.cout || 0)); }
+  for (const e of J) { const R = realize(e); if (!R) continue; day.set(R.date, (day.get(R.date) || 0) + R.ventes - (coutT(e))); }
   const now = new Date(), end = new Date(now.getFullYear(), now.getMonth(), now.getDate());
   const start = GR.semaine.add(GR.semaine.start(end), -25);
   const vals = [...day.values()].filter(v => v > 0).sort((a, b) => a - b);
@@ -1026,8 +1039,8 @@ function renderAlerts(J) {
   const A = []; const now = new Date(); const days = s => { const d = pD(s); return d ? Math.floor((now - d) / 864e5) : 0; };
   const pl = (n, s, p) => n > 1 ? p : s;
   const dorm = J.filter(e => !realize(e) && !(+e.runes > 0) && days(e.achat) > 7);
-  if (dorm.length) A.push(["c-warn", "Stock", `${dorm.length} ${pl(dorm.length, "série achetée", "séries achetées")} il y a plus de 7 jours ${pl(dorm.length, "attend", "attendent")} d'être ${pl(dorm.length, "brisée", "brisées")} : ${fmt(dorm.reduce((a, e) => a + (+e.cout || 0), 0))} kamas immobilisés.`]);
-  const unsold = J.filter(e => !(+e.encaisse > 0) && +e.runes > 0 && days(e.brisage) > 5);
+  if (dorm.length) A.push(["c-warn", "Stock", `${dorm.length} ${pl(dorm.length, "série achetée", "séries achetées")} il y a plus de 7 jours ${pl(dorm.length, "attend", "attendent")} d'être ${pl(dorm.length, "brisée", "brisées")} : ${fmt(dorm.reduce((a, e) => a + (coutT(e)), 0))} kamas immobilisés.`]);
+  const unsold = J.filter(e => !isDone(e) && +e.runes > 0 && days(e.brisage) > 5);
   if (unsold.length) A.push(["c-info", "Runes", `${unsold.length} ${pl(unsold.length, "brisage", "brisages")} de plus de 5 jours sans vente saisie : leurs runes ne comptent pas encore dans le bénéfice.`]);
   const est = new Map(S.suivi.map(s => [s.id, statsOf(s).roi]));
   for (const o of byItem(J)) {
@@ -1043,7 +1056,7 @@ function renderAlerts(J) {
   const recent = new Set(J.filter(e => days(e.achat) <= 14).map(e => e.item));
   const best = S.suivi.map(s => ({ s, ...statsOf(s) })).filter(x => x.ok && x.roi > 0 && !recent.has(x.s.id)).sort((a, b) => b.roi - a.roi)[0];
   if (best) A.push(["c-good", "Opportunité", `${ITEMS.get(best.s.id)?.n} est estimé à ${pillTxt(best.roi)} et n'a pas été crafté depuis 14 jours.`]);
-  const dm = new Map(); for (const e of J) { const R = realize(e); if (!R || !R.date.startsWith(today().slice(0, 7))) continue; dm.set(R.date, (dm.get(R.date) || 0) + R.ventes - (+e.cout || 0)); }
+  const dm = new Map(); for (const e of J) { const R = realize(e); if (!R || !R.date.startsWith(today().slice(0, 7))) continue; dm.set(R.date, (dm.get(R.date) || 0) + R.ventes - (coutT(e))); }
   const top = [...dm.entries()].sort((a, b) => b[1] - a[1])[0];
   if (top && top[1] > 0) A.push(["c-good", "Record", `Meilleur jour du mois : ${pD(top[0]).toLocaleDateString("fr-FR", { weekday: "long", day: "numeric" })} avec ${fmt(top[1])} de bénéfice.`]);
   $("#alerts").innerHTML = A.length ? A.slice(0, 7).map(([c, l, t]) => `<li><span class="chip ${c}">${l}</span><span>${esc(t)}</span></li>`).join("") : `<li class="empty">Rien à signaler.</li>`;
@@ -1061,9 +1074,9 @@ function renderGroup() {
     for (const e of m.journal) {
       const R = realize(e); const dts = [e.achat, e.brisage, e.vente].filter(Boolean).sort(); if (dts.length && dts[dts.length - 1] > last) last = dts[dts.length - 1];
       if (!R) continue; const d = pD(R.date); if (from && (!d || d < from)) continue;
-      ven += R.ventes; cout += +e.cout || 0; n++;
+      ven += R.ventes; cout += coutT(e); n++;
     }
-    const stock = m.journal.filter(e => !realize(e)).reduce((a, e) => a + (+e.cout || 0), 0);
+    const stock = m.journal.filter(e => !realize(e)).reduce((a, e) => a + (coutT(e)), 0);
     const per = m.journal.filter(e => { const R = realize(e); const d = R && pD(R.date); return R && (!from || (d && d >= from)); });
     const bi = byItem(per)[0];
     return { uid, m, ven, cout, ben: ven - cout, roi: cout ? (ven - cout) / cout : null, n, stock, best: bi, last };
@@ -1089,7 +1102,7 @@ function renderGroup() {
   const G = GR.semaine, cur = G.start(now); const wk = []; for (let k = 11; k >= 0; k--) wk.push(G.add(cur, -k));
   const ds = membersSorted().map(([uid, m]) => {
     const per = wk.map(() => 0);
-    for (const e of m.journal) { const R = realize(e); if (!R) continue; const d = pD(R.date); if (!d) continue; const i = wk.findIndex((w, j) => d >= w && (j === wk.length - 1 || d < wk[j + 1])); if (i >= 0) per[i] += R.ventes - (+e.cout || 0); }
+    for (const e of m.journal) { const R = realize(e); if (!R) continue; const d = pD(R.date); if (!d) continue; const i = wk.findIndex((w, j) => d >= w && (j === wk.length - 1 || d < wk[j + 1])); if (i >= 0) per[i] += R.ventes - (coutT(e)); }
     let s = 0; const c = colorHex(uid);
     return { label: m.p.pseudo, data: per.map(v => Math.round(s += v)), borderColor: c, backgroundColor: c, borderWidth: 2, pointRadius: 3, pointHoverRadius: 6, pointBorderColor: css("--surface"), pointBorderWidth: 1.5, tension: .2 };
   });
@@ -1280,6 +1293,59 @@ $("#lForm").addEventListener("submit", e => {
   $("#launchPanel").hidden = true;
   toast(`${q} × ${it.n} lancé${q > 1 ? "s" : ""} : à retrouver dans Mes séries`);
 });
+// ----- mise en vente (taxe payée à chaque fois) et ventes partielles
+let sellJ = null, sellMode = "vente";
+const nowDT = () => { const d = new Date(); return `${isoD(d)}T${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`; };
+const fdt = d => d ? `${fdate(String(d).slice(0, 10))}${String(d).length > 10 ? " " + String(d).slice(11, 16) : ""}` : "";
+function openSell(jid, mode) {
+  const e = S.journal.find(j => j._id === jid); if (!e) return; sellJ = e; sellMode = mode;
+  const rev = stratOf(e.src, e.dest).dest === "revente", s = S.suivi.find(x => x.id === e.item), left = Math.max(0, (e.qte || 1) - vendusQ(e));
+  const lastP = [...(e.mev || [])].reverse().find(m => m.p)?.p || +s?.pv || "";
+  $("#sT").textContent = mode === "mev" ? (+e.lv > 0 ? "Baisser le prix" : "Mettre en vente") : "J'ai vendu";
+  $("#sItem").innerHTML = `<b>${esc(e.nom)}</b><small>${rev ? `${left} sur ${e.qte || 1} pas encore vendu${left > 1 ? "s" : ""}` : "Runes du brisage"}${+e.frais > 0 ? ` · ${fmt(+e.frais)} de taxes déjà payées` : ""}</small>`;
+  $("#sRev").hidden = !rev; $("#sRun").hidden = rev; $("#sAllW").hidden = rev || mode === "mev";
+  $("#sQ").value = left || 1; $("#sQ").max = left || 1; $("#sP").value = lastP ? lotFmt(lastP) : "";
+  $("#sK").value = mode === "mev" ? (+e.runes > 0 ? lotFmt(+e.runes) : "") : (+e.lv > 0 ? lotFmt(+e.lv) : ""); $("#sAll").checked = false;
+  $("#sD").value = nowDT(); $("#sDW").hidden = false;
+  $("#sKl").textContent = mode === "mev" ? "Valeur mise en vente (toutes les runes)" : "Kamas reçus";
+  $("#sPl").textContent = mode === "mev" ? "Nouveau prix unitaire" : "Prix de vente unitaire";
+  $("#sQl").textContent = mode === "mev" ? "Combien en vente" : "Combien vendus";
+  sellCalc(); $("#sellPanel").hidden = false; (rev ? (mode === "mev" ? $("#sP") : $("#sQ")) : $("#sK")).focus();
+}
+function sellVals() {
+  const e = sellJ, rev = stratOf(e.src, e.dest).dest === "revente", t = taxe();
+  const q = rev ? Math.max(1, Math.round(+$("#sQ").value || 1)) : 0, p = rev ? (lotParse($("#sP").value) || 0) : 0;
+  const v = rev ? q * p : (lotParse($("#sK").value) || 0);
+  if (sellMode === "mev") return { rev, q, p, v, fee: Math.round(v * t) };
+  const covered = Math.min(v, +e.lv || 0), fee = Math.round((v - covered) * t); // vendu sans mise en vente enregistrée : on compte la taxe
+  return { rev, q, p, v, fee, covered };
+}
+function sellCalc() {
+  if (!sellJ) return; const x = sellVals(), e = sellJ;
+  $("#sSum").innerHTML = sellMode === "mev"
+    ? `<div class="tot"><span>Taxe à payer (${Math.round(taxe() * 1000) / 10} %)</span><b>${fmt(x.fee)}</b></div><div class="tot"><span>Taxes de cette série</span><b>${fmt((+e.frais || 0) + x.fee)}</b></div>`
+    : `<div class="tot"><span>Encaissé</span><b>${fmt(x.v)}</b></div><div class="tot"><span>Taxe en plus</span><b>${x.fee ? fmt(x.fee) : "déjà payée"}</b></div><div class="tot big"><span>Total encaissé</span><b>${fmt((+e.encaisse || 0) + x.v)}</b></div>`;
+}
+["sQ", "sP", "sK"].forEach(k => $("#" + k).addEventListener("input", sellCalc));
+$("#sellPanel").addEventListener("click", e => { if (e.target.id === "sellPanel" || e.target.closest("[data-close]")) $("#sellPanel").hidden = true; });
+$("#sForm").addEventListener("submit", ev => {
+  ev.preventDefault(); const e = sellJ; if (!e || !isMe()) return; const x = sellVals(); const d = $("#sD").value || nowDT();
+  if (!(x.v > 0)) { $("#sSum").insertAdjacentHTML("afterbegin", `<p class="neg" style="grid-column:1/-1;margin:0">Indique un prix.</p>`); return; }
+  const patch = {};
+  if (sellMode === "mev") {
+    patch.mev = [...(e.mev || []), { d, ...(x.rev ? { q: x.q, p: x.p } : {}), v: Math.round(x.v), f: x.fee }];
+    patch.frais = (+e.frais || 0) + x.fee; patch.lv = Math.round(x.v);
+    toast(`Mis en vente · taxe ${fmt(x.fee)}`);
+  } else {
+    const ventes = [...(e.ventes || []), { d, ...(x.rev ? { q: x.q, p: x.p } : {}), k: Math.round(x.v) }];
+    patch.ventes = ventes; patch.encaisse = (+e.encaisse || 0) + Math.round(x.v); patch.vente = d.slice(0, 10);
+    patch.frais = (+e.frais || 0) + x.fee; patch.lv = Math.max(0, Math.round((+e.lv || 0) - x.covered));
+    const all = x.rev ? vendusQ({ ventes }) >= (e.qte || 1) : $("#sAll").checked;
+    patch.fini = all;
+    toast(all ? `Série terminée · ${fmt(patch.encaisse)} encaissés` : `Vente notée · ${x.rev ? `${vendusQ({ ventes })}/${e.qte || 1} vendus` : "il reste des runes"}`);
+  }
+  Object.assign(e, patch); Store.updJr(e._id, patch); $("#sellPanel").hidden = true; render();
+});
 function quickJr(jid, kind) {
   const e = S.journal.find(j => j._id === jid); if (!e) return;
   if (kind === "brise") {
@@ -1288,13 +1354,7 @@ function quickJr(jid, kind) {
     const patch = { brisage: today(), ...(runes ? { runes } : {}) }; Object.assign(e, patch); Store.updJr(jid, patch); renderJr(); applyRO();
     if (!runes) { const el = document.getElementById("jruns-" + jid) || document.getElementById("jrunes-" + jid); el?.focus(); toast("Brisé aujourd'hui : saisis la valeur des runes"); }
     else toast(`Brisé aujourd'hui · runes estimées ${fmt(runes)}`);
-  } else {
-    const s = S.suivi.find(x => x.id === e.item);
-    const enc = Math.round(+e.runes > 0 ? e.runes * (1 - taxe()) : (+s?.pv || 0) * (e.qte || 1) * (1 - taxe()));
-    const patch = { vente: today(), encaisse: enc }; Object.assign(e, patch); Store.updJr(jid, patch); renderJr(); applyRO();
-    const el = document.getElementById("jencaisse-" + jid); el?.focus(); el?.select();
-    toast(`Vendu aujourd'hui · ${fmt(enc)} encaissés (taxe déduite). Corrige si besoin.`);
-  }
+  } else openSell(jid, kind === "mev" ? "mev" : "vente");
 }
 
 // ---------------------------------------------------------------- clavier façon tableur
@@ -1337,7 +1397,7 @@ $("#mkMissing").addEventListener("change", () => { missDirty(); renderRes(); app
 $("#startHide").addEventListener("click", () => { lsSet("startHidden", "1"); $("#startCard").hidden = true; });
 $("#v-home").addEventListener("click", e => {
   const g = e.target.closest("[data-goto]"); if (g) { const t = g.dataset.goto; if (t === "res") { missDirty(); $("#mkMissing").checked = true; } setTab(t); window.scrollTo({ top: 0 }); return; }
-  const q = e.target.closest("[data-hquick]"); if (q && isMe()) { quickJr(q.dataset.jid, q.dataset.hquick); render(); return; }
+  const q = e.target.closest("[data-hquick]"); if (q && isMe()) { quickJr(q.dataset.jid, q.dataset.hquick); if (q.dataset.hquick === "brise") render(); return; }
   const l = e.target.closest("[data-launch-h]"); if (l && isMe()) { quickSerie(+l.dataset.launchH, +l.dataset.q || 1); return; }
 });
 ["petFrom", "petTo"].forEach(k => { const v = lsGet(k); if (v) $("#" + k).value = v; $("#" + k).addEventListener("input", e => { lsSet(k, e.target.value); renderPet(); }); });
@@ -1412,7 +1472,7 @@ function applyTheme() {
 $("#btnTheme").addEventListener("click", () => { theme = THEMES[(THEMES.indexOf(theme) + 1) % 3]; lsSet("theme", theme); applyTheme(); toast("Thème : " + THEME_LAB[theme].toLowerCase()); });
 $("#themeLab").textContent = THEME_LAB[theme];
 $("#dataPanel").addEventListener("click", e => { if (e.target.id === "dataPanel") $("#dataPanel").hidden = true; });
-document.addEventListener("keydown", e => { if (e.key === "Escape") { $("#dataPanel").hidden = true; $("#launchPanel").hidden = true; $("#xpPanel").hidden = true; } });
+document.addEventListener("keydown", e => { if (e.key === "Escape") { $("#dataPanel").hidden = true; $("#launchPanel").hidden = true; $("#xpPanel").hidden = true; $("#sellPanel").hidden = true; } });
 // ----- repartir de zéro : vide uniquement les données de l'utilisateur connecté
 $("#resetTxt").addEventListener("input", e => { $("#btnReset").disabled = e.target.value.trim().toUpperCase() !== "VIDER"; });
 $("#btnReset").addEventListener("click", async () => {
