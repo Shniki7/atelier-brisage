@@ -500,6 +500,18 @@ button.danger:disabled{opacity:.4;cursor:not-allowed}
 .seg.sm button{padding:4px 10px;font-size:12px}
 @media (max-width:1000px){.flow{grid-template-columns:1fr}.flow .fstep.wide{grid-column:auto}}
 
+.cart-search{max-width:none}
+.t-cart{min-width:640px}.t-cart td{padding:8px}.t-cart select{max-width:200px}
+.cart-foot{display:grid;grid-template-columns:repeat(3,minmax(0,1fr)) auto;gap:10px;align-items:stretch}
+.cart-foot:empty{display:none}
+.cart-go{display:flex;flex-direction:column;justify-content:center;align-items:flex-end;gap:4px}
+.cart-go button{padding:10px 18px}
+@media (max-width:700px){.cart-foot{grid-template-columns:1fr 1fr}.cart-go{grid-column:1/-1;align-items:stretch}}
+.ideas{border-top:1px solid var(--line);padding-top:10px}
+.ideas summary{cursor:pointer;font-weight:600;color:var(--accent);font-size:13.5px}
+.ideas[open] summary{margin-bottom:8px}
+td.r{text-align:right}
+
 /* ---------- lecture seule ---------- */
 body.ro .own-only{display:none!important}
 

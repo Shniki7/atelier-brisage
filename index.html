@@ -126,10 +126,15 @@
             <ul class="kv" id="homeCapKv"></ul>
           </div>
           <div class="panel fstep wide">
-            <div class="panel-head"><h2><span class="fn">2</span>Où les placer</h2><span class="sub" id="homePlanSub"></span></div>
-            <p class="note fmoy">Pour chaque item, l'outil compare tes 4 moyens : <b>crafter puis revendre</b>, <b>crafter puis briser</b>, <b>acheter puis revendre</b>, <b>acheter puis briser</b>. Il garde le plus rentable.</p>
-            <div class="tbl-wrap"><table class="t-plan"><thead><tr><th class="l">Item</th><th class="l">Moyen</th><th>Qté</th><th>J'engage</th><th>Je gagne</th><th></th></tr></thead><tbody id="homePlan"></tbody></table></div>
-            <p class="note" id="homePlanNote"></p>
+            <div class="panel-head"><h2><span class="fn">2</span>Mon panier</h2><span class="sub">Ce que je veux faire avec mes kamas</span></div>
+            <div class="search own-only cart-search"><input id="cq" type="search" placeholder="Ajouter un item au panier, ex. Bottes de Rapiat" autocomplete="off" aria-label="Ajouter un item au panier"><ul class="results" id="cqres" hidden></ul></div>
+            <div class="tbl-wrap"><table class="t-cart"><thead><tr><th class="l">Item</th><th class="l">Moyen</th><th>Qté</th><th>J'engage</th><th>Je récupère</th><th>Je gagne</th><th></th></tr></thead><tbody id="cart"></tbody></table></div>
+            <div class="cart-foot" id="cartFoot"></div>
+            <details class="ideas" id="ideasBox"><summary>Des idées ? Le meilleur panier possible avec tes kamas disponibles <span id="ideasSub" class="note"></span></summary>
+              <p class="note fmoy">Pour chaque item, l'outil compare tes 4 moyens (crafter ou acheter, puis briser ou revendre) et garde le plus rentable.</p>
+              <div class="tbl-wrap"><table class="t-plan"><tbody id="homePlan"></tbody></table></div>
+              <p class="note" id="homePlanNote"></p>
+            </details>
           </div>
           <div class="panel fstep wide">
             <div class="panel-head"><h2><span class="fn">3</span>En cours</h2><span class="sub">Kamas engagés, pas encore revenus</span></div>

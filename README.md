@@ -3,7 +3,7 @@
 Outil de rentabilité du craft et du brisage pour **Dofus 3**, à partager entre amis.
 
 - **2 799 recettes d'équipements Dofus 3**, extraites des fichiers du jeu et mises à jour chaque semaine par GitHub.
-- **Mes kamas** (page d'accueil) : 1. les kamas que j'engage → 2. où les placer (le meilleur des 4 moyens pour chaque item) → 3. ce qui est en cours → 4. mon bénéfice (semaine, mois ou tout).
+- **Mes kamas** (page d'accueil) : 1. les kamas que j'engage → 2. mon panier (je cherche un item, je choisis le moyen et la quantité, l'outil calcule ce que j'engage et ce que je gagne, puis « Lancer le panier ») avec des idées si besoin → 3. ce qui est en cours → 4. mon bénéfice.
 - **Opportunités** : pour chaque item, la meilleure des 4 options (crafter ou acheter, puis briser ou revendre), avec un indice de fiabilité, et le plan qui rapporte le plus pour ton budget.
 - **Prix du marché** : tous tes prix au même endroit (ressources, runes, items), avec les prix proposés par ton groupe.
 - **Mes séries** : chaque série, de l'achat à la vente, avec un bouton par étape (Brisé, Vendu).

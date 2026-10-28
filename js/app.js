@@ -567,13 +567,15 @@ function renderHome() {
   if (document.activeElement !== $("#homeCap")) $("#homeCap").value = cap || "";
   const engaged = c.open.reduce((a, e) => a + (+e.cout || 0), 0), free = Math.max(0, cap - engaged);
   $("#homeCapKv").innerHTML = `<li><span>Déjà engagés (en cours)</span><b class="mono">${fmt(engaged)}</b></li><li><span>Encore disponibles</span><b class="mono">${fmt(free)}</b></li>`;
-  // 2. où les placer : le plan optimal pour les kamas disponibles
-  const plan = planFor(c.st, free);
-  $("#homePlanSub").textContent = plan.picks.length ? `Avec ${kfmt(free)} : +${kfmt(plan.ben)} attendus` : "";
-  $("#homePlan").innerHTML = plan.picks.length ? plan.picks.slice(0, 8).map(p => `<tr><td class="l"><b>${esc(p.it.n)}</b></td><td class="l">${stratTxt(p.best)}</td><td class="m"><b>${p.q}</b></td><td class="m">${fmt(p.q * p.cost)}</td><td class="m pos"><b>+${fmt(p.gain)}</b></td>
-      <td class="acts">${me ? `<button class="ghost" data-launch-h="${p.it.id}" data-q="${p.q}" type="button" title="J'y vais : enregistrer cette série">Lancer</button>` : ""}</td></tr>`).join("")
-    : `<tr><td colspan="6" class="empty">${!cap ? "Indique d'abord combien de kamas tu veux engager." : !c.hasItems ? "Aucun item suivi. Ajoute les items qui t'intéressent dans Opportunités." : !free ? "Tous tes kamas sont déjà engagés : termine tes séries en cours." : "Aucune option rentable chiffrée avec tes prix actuels."}</td></tr>`;
-  $("#homePlanNote").innerHTML = (c.miss ? `<button class="linkish" data-goto="res" type="button">Il manque ${c.miss} prix : les compléter</button> pour un plan plus juste. ` : c.stale ? `<button class="linkish" data-goto="res" type="button">${c.stale} prix ont plus de 7 jours : les mettre à jour</button>. ` : "") + `<button class="linkish" data-goto="crafts" type="button">Voir le détail par item</button>`;
+  // 2. mon panier
+  renderCart(free);
+  // idées : le plan optimal pour les kamas disponibles (moins ce qui est déjà dans le panier)
+  const plan = planFor(c.st, Math.max(0, free - cartTotals().inv));
+  $("#ideasSub").textContent = plan.picks.length ? `(+${kfmt(plan.ben)} possibles)` : "";
+  $("#homePlan").innerHTML = plan.picks.length ? plan.picks.slice(0, 8).map(p => `<tr><td class="l"><b>${esc(p.it.n)}</b><small class="strat">${stratTxt(p.best)}</small></td><td class="m"><b>${p.q}</b> ex.</td><td class="m">${fmt(p.q * p.cost)}</td><td class="m pos"><b>+${fmt(p.gain)}</b></td>
+      <td class="acts">${me ? `<button class="ghost" data-cart-add="${p.it.id}" data-q="${p.q}" data-k="${p.best.k}" type="button">+ panier</button>` : ""}</td></tr>`).join("") + (me ? `<tr><td colspan="5" class="r"><button type="button" class="ghost" id="ideasAll">Tout mettre dans le panier</button></td></tr>` : "")
+    : `<tr><td class="empty">${!cap ? "Indique d'abord combien de kamas tu veux engager (étape 1)." : !c.hasItems ? "Ajoute d'abord des items au panier ou dans Opportunités : l'outil cherche parmi eux." : !free ? "Tous tes kamas sont déjà engagés." : "Aucune idée chiffrée avec tes prix actuels."}</td></tr>`;
+  $("#homePlanNote").innerHTML = c.miss ? `<button class="linkish" data-goto="res" type="button">Il manque ${c.miss} prix : les compléter</button> pour de meilleures idées.` : "";
   // 3. en cours
   const todo = [...c.open].sort((a, b) => (a.achat || "").localeCompare(b.achat || ""));
   $("#homeTodo").innerHTML = todo.length ? todo.slice(0, 12).map(e => {
@@ -595,6 +597,79 @@ function renderHome() {
     <li><span>Rendement</span><b class="mono">${inv ? pillTxt(ben / inv) : "–"}</b></li><li><span>Séries terminées</span><b class="mono">${n}</b></li>
     <li><span></span><button class="linkish" data-goto="dash" type="button">Voir les graphiques</button></li>`;
 }
+// ----- panier : la liste de ce que je veux faire, avant de lancer les séries
+const cartKey = () => "cart-" + ME;
+function cartGet() { try { return JSON.parse(lsGet(cartKey()) || "[]"); } catch (e) { return []; } }
+function cartSet(c) { lsSet(cartKey(), JSON.stringify(c)); }
+function cartLine(l) {
+  const s = S.suivi.find(x => x.id === l.id) || { id: l.id, coef: 100, brk: 0 }, st = statsOf(s);
+  const o = st.opts.find(x => x.k === l.k) || st.best || st.opts[0];
+  return { ...l, it: ITEMS.get(l.id), st, o, inv: o.in != null ? o.in * l.q : null, back: o.out != null ? o.out * l.q : null };
+}
+function cartTotals() {
+  const L = isMe() ? cartGet().filter(l => ITEMS.has(l.id)).map(cartLine) : [];
+  return { L, inv: L.reduce((a, x) => a + (x.inv || 0), 0), back: L.reduce((a, x) => a + (x.back || 0), 0), unknown: L.filter(x => x.inv == null || x.back == null) };
+}
+function cartAdd(id, q, k) {
+  if (!isMe() || !ITEMS.has(id)) return;
+  if (!S.suivi.some(x => x.id === id)) { S.suivi.push({ id, brk: 0 }); Store.saveSuivi(); }
+  const c = cartGet(), ex = c.find(l => l.id === id);
+  if (!k) { const st = statsOf(S.suivi.find(x => x.id === id)); k = (st.best || STRATS[0]).k; }
+  if (ex) { ex.q += q || 1; if (k) ex.k = k; } else c.push({ id, q: q || 1, k });
+  cartSet(c);
+}
+function renderCart(free) {
+  const me = isMe(), T = cartTotals();
+  $("#cart").innerHTML = !me ? `<tr><td class="empty">Le panier est personnel : reviens sur ton profil.</td></tr>`
+    : T.L.length ? T.L.map(x => `<tr>
+      <td class="l"><b>${esc(x.it.n)}</b><small class="strat">Niv. ${x.it.l}${x.st.best && x.st.best.k !== x.o.k ? ` · meilleur moyen : ${stratTxt(x.st.best).toLowerCase()}` : ""}</small></td>
+      <td class="l"><select data-cart-k="${x.id}" aria-label="Moyen pour ${esc(x.it.n)}">${STRATS.map(o => `<option value="${o.k}" ${o.k === x.o.k ? "selected" : ""}>${stratTxt(o)}</option>`).join("")}</select></td>
+      <td><input class="num" id="cq-${x.id}" data-cart-q="${x.id}" data-col="cq" type="number" min="1" value="${x.q}" aria-label="Quantité de ${esc(x.it.n)}" style="width:70px"></td>
+      <td class="m">${x.inv != null ? fmt(x.inv) : `<button class="linkish miss-t" data-fixm="${x.id}" data-seg="${x.o.src === "achat" ? "items" : "res"}" type="button">prix ?</button>`}</td>
+      <td class="m">${x.back != null ? fmt(x.back) : `<button class="linkish miss-t" data-fixm="${x.id}" data-seg="${x.o.dest === "revente" ? "items" : "runes"}" type="button">prix ?</button>`}</td>
+      <td class="m">${x.inv != null && x.back != null ? `<b class="${x.back - x.inv < 0 ? "neg" : "pos"}">${x.back - x.inv > 0 ? "+" : ""}${fmt(x.back - x.inv)}</b>` : "–"}</td>
+      <td class="acts"><button class="ghost x" data-cart-del="${x.id}" type="button" aria-label="Retirer ${esc(x.it.n)} du panier">×</button></td></tr>`).join("")
+    : `<tr><td class="empty">Ton panier est vide. Cherche un item ci-dessus, ou ouvre les idées en dessous.</td></tr>`;
+  const left = free - T.inv, gain = T.back - T.inv;
+  $("#cartFoot").innerHTML = me && T.L.length ? `
+    <div class="tot"><span>J'engage</span><b>${fmt(T.inv)}</b></div>
+    <div class="tot"><span>Il me restera</span><b class="${left < 0 ? "neg" : ""}">${fmt(left)}</b></div>
+    <div class="tot big"><span>Je gagne</span><b style="color:${gain < 0 ? "var(--bad)" : "var(--good)"}">${gain > 0 ? "+" : ""}${fmt(gain)}</b></div>
+    <div class="cart-go">${T.unknown.length ? `<small class="note">${T.unknown.length} ligne${T.unknown.length > 1 ? "s" : ""} sans prix : clique « prix ? » pour compléter.</small>` : left < 0 ? `<small class="neg">Le panier dépasse tes kamas disponibles.</small>` : ""}
+      <button class="primary" type="button" id="cartGo" ${T.unknown.length ? "disabled" : ""}>Lancer le panier</button></div>` : "";
+}
+$("#cq").addEventListener("input", e => {
+  const f = norm(e.target.value.trim()), box = $("#cqres"); if (f.length < 2) { box.hidden = true; return; }
+  const toks = f.split(/\s+/), H = D.items.filter(it => toks.every(t => it.nn.includes(t))).slice(0, 14);
+  box.innerHTML = H.length ? H.map((it, i) => `<li data-cadd="${it.id}" class="${i === 0 ? "hl" : ""}"><span>${esc(it.n)}</span><small>Niv. ${it.l} · ${esc(D.types[it.t] || "")}</small></li>`).join("") : `<li class="note">Aucun item craftable trouvé</li>`;
+  box.hidden = false;
+});
+$("#cq").addEventListener("keydown", e => {
+  const box = $("#cqres"), li = [...box.querySelectorAll("[data-cadd]")]; if (box.hidden || !li.length) return;
+  let h = li.findIndex(x => x.classList.contains("hl"));
+  if (e.key === "ArrowDown" || e.key === "ArrowUp") { e.preventDefault(); h = (h + (e.key === "ArrowDown" ? 1 : li.length - 1)) % li.length; li.forEach((x, i) => x.classList.toggle("hl", i === h)); }
+  if (e.key === "Enter") { e.preventDefault(); li[Math.max(0, h)].dispatchEvent(new MouseEvent("mousedown", { bubbles: true })); }
+  if (e.key === "Escape") box.hidden = true;
+});
+$("#cqres").addEventListener("mousedown", e => { const li = e.target.closest("[data-cadd]"); if (!li) return; e.preventDefault(); const id = +li.dataset.cadd; cartAdd(id, 1); $("#cq").value = ""; $("#cqres").hidden = true; renderHome(); toast(`${ITEMS.get(id).n} ajouté au panier`); setTimeout(() => { const q = document.getElementById("cq-" + id); q?.focus(); q?.select(); }, 0); });
+$("#cq").addEventListener("blur", () => setTimeout(() => $("#cqres").hidden = true, 120));
+document.addEventListener("change", e => {
+  const t = e.target; if (!isMe()) return;
+  if (t.dataset.cartQ || t.dataset.cartK) { const id = +(t.dataset.cartQ || t.dataset.cartK), c = cartGet(), l = c.find(x => x.id === id); if (!l) return;
+    if (t.dataset.cartQ) l.q = Math.max(1, Math.round(+t.value || 1)); else l.k = t.value; cartSet(c); setTimeout(() => keepFocus(renderHome), 0); }
+});
+document.addEventListener("click", e => {
+  const t = e.target; if (!isMe()) return;
+  const d = t.closest("[data-cart-del]"); if (d) { cartSet(cartGet().filter(l => l.id !== +d.dataset.cartDel)); renderHome(); return; }
+  const a = t.closest("[data-cart-add]"); if (a) { cartAdd(+a.dataset.cartAdd, +a.dataset.q || 1, a.dataset.k); renderHome(); toast("Ajouté au panier"); return; }
+  if (t.closest("#ideasAll")) { document.querySelectorAll("#homePlan [data-cart-add]").forEach(b => cartAdd(+b.dataset.cartAdd, +b.dataset.q || 1, b.dataset.k)); $("#ideasBox").open = false; renderHome(); toast("Idées ajoutées au panier"); return; }
+  const m = t.closest("[data-fixm]"); if (m) { openMarketFor(+m.dataset.fixm, m.dataset.seg); return; }
+  if (t.closest("#cartGo")) {
+    const T = cartTotals(); if (!T.L.length || T.unknown.length) return;
+    for (const x of T.L) Store.addJr({ item: x.id, nom: x.it.n, qte: x.q, cout: Math.round(x.inv), achat: today(), brisage: "", runes: 0, vente: "", encaisse: 0, src: x.o.src, dest: x.o.dest });
+    cartSet([]); toast(`${T.L.length} série${T.L.length > 1 ? "s" : ""} lancée${T.L.length > 1 ? "s" : ""} : elles sont dans « En cours »`); renderHome();
+  }
+});
 $("#homeCap").addEventListener("change", e => { const v = Math.max(0, +e.target.value || 0); lsSet("budget", String(v)); $("#budget").value = v; deferRender(); });
 document.addEventListener("click", e => { const b = e.target.closest("[data-hp]"); if (!b) return; homePer = b.dataset.hp; lsSet("homePer", homePer); renderHome(); });
 
