@@ -512,6 +512,8 @@ button.danger:disabled{opacity:.4;cursor:not-allowed}
 .ideas[open] summary{margin-bottom:8px}
 td.r{text-align:right}
 
+input.lot{width:96px}
+
 /* ---------- lecture seule ---------- */
 body.ro .own-only{display:none!important}
 

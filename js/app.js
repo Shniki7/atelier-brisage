@@ -754,8 +754,8 @@ function renderRes() {
     $("#res").innerHTML = list.length ? list.map(x => { const p = S.prix[x.rid], rc = !!S.rec[x.rid]; return `<tr>
       <td class="l"><b>${esc(x.n)}</b></td><td class="l note">${esc([...new Set(x.its)].join(", "))}</td>
       <td><label class="chk"><input type="checkbox" id="rec-${x.rid}" data-rec="${x.rid}" ${rc ? "checked" : ""} aria-label="Je récolte ${esc(x.n)}"><span>récoltée</span></label></td>
-      <td><input class="num ${phCls(x.pi, p)}" id="rp-${x.rid}" data-price="${x.rid}" data-col="rp" type="number" min="0" value="${p || ""}" placeholder="${phTxt(x.pi)}" title="${phTitle(x.pi)}" aria-label="Prix de ${esc(x.n)}"></td>
-      <td class="m note">${upd(p, S.maj[x.rid], x.pi)}</td></tr>`; }).join("") : empty(5, "prix de ressources");
+      ${LOTS.map(n => `<td><input class="num lot ${phCls(x.pi, p)}" id="lot${n}-${x.rid}" data-lot="${x.rid}" data-mult="${n}" data-col="lot${n}" type="text" inputmode="decimal" autocomplete="off" value="${p > 0 ? lotFmt(p * n) : ""}" placeholder="${x.pi.src === "groupe" ? lotFmt(x.pi.v * n) : x.pi.src === "récolte" ? "0" : "–"}" title="${n === 1 ? "Prix d'une unité. Astuce : pour 2 500 achetées 512 000, tape 512000/2500" : `Prix pour ${fmt(n)} unités`}${x.pi.src === "groupe" ? " · en pointillés : prix du groupe" : ""}" aria-label="Prix de ${esc(x.n)} par ${n}"></td>`).join("")}
+      <td class="m note">${upd(p, S.maj[x.rid], x.pi)}</td></tr>`; }).join("") : empty(8, "prix de ressources");
     $("#runes").innerHTML = runes.length ? runes.map(x => { const p = S.rp[x.a]; return `<tr>
       <td class="l"><b>Rune ${esc(x.st[0])}</b><small class="note adv" style="display:block">poids ${x.st[1]}</small></td>
       <td class="l note">${esc([...new Set(x.its)].slice(0, 4).join(", "))}${new Set(x.its).size > 4 ? "…" : ""}</td>
@@ -1079,6 +1079,21 @@ $("#q").addEventListener("blur", () => setTimeout(() => $("#qres").hidden = true
 // sinon la case serait reconstruite sous le curseur et la saisie partirait dans le vide.
 let defT; function deferRender() { clearTimeout(defT); defT = setTimeout(() => { clearTimeout(softT); render(); }, 0); }
 let softT; function softCrafts() { clearTimeout(softT); softT = setTimeout(() => { if (tab === "crafts") { renderCrafts(); applyRO(); } }, 450); }
+// prix des ressources par lot : on stocke toujours le prix d'UNE unité, les autres colonnes en découlent
+const LOTS = [1, 10, 100, 1000];
+const lotFmt = v => (v >= 100 ? Math.round(v) : Math.round(v * 100) / 100).toLocaleString("fr-FR", { maximumFractionDigits: 2 }).replace(/\u202f/g, "\u00a0");
+function lotParse(t) {
+  t = String(t).replace(/[\s\u00a0\u202f]/g, "").replace(/,/g, ".").toLowerCase().replace(/(\d+(?:\.\d+)?)k/g, (m, a) => a * 1e3).replace(/(\d+(?:\.\d+)?)m/g, (m, a) => a * 1e6);
+  if (!t) return 0; const m = t.match(/^(\d+(?:\.\d+)?)(?:\/(\d+(?:\.\d+)?))?$/); if (!m) return null;
+  return m[2] ? (+m[2] > 0 ? +m[1] / +m[2] : null) : +m[1];
+}
+document.addEventListener("input", e => {
+  const t = e.target; if (!t.dataset?.lot || !isMe()) return;
+  const rid = t.dataset.lot, n = +t.dataset.mult, v = lotParse(t.value); if (v == null) return; // saisie en cours (ex. « 512000/ »)
+  const unit = v / n; setPrice(rid, unit);
+  document.querySelectorAll(`[data-lot="${rid}"]`).forEach(o => { if (o !== t) o.value = unit > 0 ? lotFmt(unit * +o.dataset.mult) : ""; o.classList.toggle("miss", !(unit > 0)); o.classList.remove("grp"); });
+});
+document.addEventListener("change", e => { const t = e.target; if (t.dataset?.lot && isMe()) deferRender(); });
 function setPrice(rid, v) {
   pendingPrix.add("prix:" + rid); const n = +v || 0;
   if (n > 0) S.prix[rid] = n; else delete S.prix[rid]; S.maj[rid] = today();

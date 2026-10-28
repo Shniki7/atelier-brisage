@@ -310,9 +310,10 @@
 
         <div class="panel" id="mk-res">
           <div class="panel-head"><h2>Ressources · ce que tu paies</h2><span class="sub">Un prix sert à tous les items qui utilisent la ressource</span></div>
+          <p class="note">Tape le prix dans la colonne du lot que tu as acheté (×1, ×10, ×100 ou ×1 000) : les autres colonnes se calculent. Pour une autre quantité, par ex. 2 500 achetées 512 000 au total, tape <b>512000/2500</b> dans ×1. « 15k » et « 1,2m » marchent aussi.</p>
           <div class="tbl-wrap">
             <table class="t-res">
-              <thead><tr><th class="sortable l" data-st="res" data-sk="name" >Ressource</th><th class="sortable l" data-st="res" data-sk="used" >Pour</th><th class="sortable l" data-st="res" data-sk="rec" >Récolte</th><th class="sortable " data-st="res" data-sk="price" >Prix d'achat</th><th class="sortable " data-st="res" data-sk="date" >Mis à jour</th></tr></thead>
+              <thead><tr><th class="sortable l" data-st="res" data-sk="name" >Ressource</th><th class="sortable l" data-st="res" data-sk="used" >Pour</th><th class="sortable l" data-st="res" data-sk="rec" >Récolte</th><th class="sortable " data-st="res" data-sk="price" title="Prix d'une unité">Prix ×1</th><th title="Prix d'un lot de 10">×10</th><th title="Prix d'un lot de 100">×100</th><th title="Prix d'un lot de 1 000">×1 000</th><th class="sortable " data-st="res" data-sk="date" >Mis à jour</th></tr></thead>
               <tbody id="res" data-freeze="res"></tbody>
             </table>
           </div>
