@@ -1308,6 +1308,21 @@ $("#btnTheme").addEventListener("click", () => { theme = THEMES[(THEMES.indexOf(
 $("#themeLab").textContent = THEME_LAB[theme];
 $("#dataPanel").addEventListener("click", e => { if (e.target.id === "dataPanel") $("#dataPanel").hidden = true; });
 document.addEventListener("keydown", e => { if (e.key === "Escape") { $("#dataPanel").hidden = true; $("#launchPanel").hidden = true; $("#xpPanel").hidden = true; } });
+// ----- repartir de zéro : vide uniquement les données de l'utilisateur connecté
+$("#resetTxt").addEventListener("input", e => { $("#btnReset").disabled = e.target.value.trim().toUpperCase() !== "VIDER"; });
+$("#btnReset").addEventListener("click", async () => {
+  if ($("#resetTxt").value.trim().toUpperCase() !== "VIDER") return;
+  $("#btnReset").disabled = true;
+  try {
+    $("#btnExport").click();
+    const me = member(ME), ids = me.journal.map(j => j._id).filter(Boolean);
+    for (let i = 0; i < ids.length; i += 400) { const b = db.batch(); ids.slice(i, i + 400).forEach(id => b.delete(db.doc(`profiles/${ME}/journal/${id}`))); await b.commit(); }
+    Object.assign(me, { prix: {}, maj: {}, rp: {}, rm: {}, rpt: {}, rec: {}, xp: {}, xw: {}, xws: "", pl: [], suivi: [], journal: [] });
+    const wasView = VIEW; VIEW = ME; S = me; pendingPrix.clear(); Store.savePrix(); Store.saveSuivi(); VIEW = wasView; S = member(VIEW);
+    Object.keys(frozen).forEach(x => delete frozen[x]);
+    $("#resetTxt").value = ""; $("#dataPanel").hidden = true; render(); toast("Tout est vidé : page vierge");
+  } catch (x) { console.error(x); toast("Échec de la remise à zéro"); }
+});
 $("#btnStarter").addEventListener("click", async () => {
   try { const d = await (await fetch("data/depart-tanguy.json")).json(); await importData(d); $("#dataPanel").hidden = true; }
   catch (x) { console.error(x); toast("Impossible de charger les items de départ"); }

@@ -486,6 +486,11 @@ th.sortable:hover{color:var(--fg)}
 th.sortable::after{content:attr(data-dir);display:inline-block;width:1.1em;margin-left:3px;color:var(--accent);font-size:10px}
 th.sortable.on{color:var(--fg)}
 
+.reset-box{margin-top:18px;padding-top:14px;border-top:1px solid var(--line-2)}
+.reset-box h3{font-size:13px;margin:0 0 4px;color:var(--bad)}
+button.danger{background:var(--bad);color:#fff;border-color:transparent}
+button.danger:disabled{opacity:.4;cursor:not-allowed}
+
 /* ---------- lecture seule ---------- */
 body.ro .own-only{display:none!important}
 
