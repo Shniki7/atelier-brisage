@@ -201,11 +201,11 @@
             </div>
             <div class="tbl-wrap">
               <table class="t-crafts">
-                <thead><tr><th class="l">Item</th><th>Coût craft</th><th title="Coefficient de brisage affiché en jeu, de 0 à 4000 %">Coef. %</th><th>Brisage</th><th>Bénéfice</th><th>Rendement</th><th></th></tr></thead>
+                <thead><tr><th class="l">Item</th><th title="Coût de la recette avec tes prix de ressources">Craft</th><th title="Prix pour acheter l'item tout fait">Achat</th><th title="Prix de vente de l'item à l'HDV">Revente HDV</th><th title="Valeur des runes, estimée ou saisie">Brisage</th><th class="l">Meilleure option</th><th></th></tr></thead>
                 <tbody id="crafts" data-freeze="crafts"></tbody>
               </table>
             </div>
-            <p class="note">Clique sur un item pour voir sa recette et les runes qu'il donne. Le brisage est estimé à partir du prix des runes et du coefficient. Saisis une valeur pour le remplacer, efface-la pour revenir à l'estimation. Les cases orange sont des prix à renseigner.</p>
+            <p class="note">Pour chaque item, l'outil compare 4 options : <b>crafter ou acheter</b> l'item, puis le <b>briser ou le revendre</b> à l'HDV. Renseigne le prix d'achat et le prix de revente quand tu les connais : la meilleure option s'affiche à droite. Clique sur un item pour voir le détail des 4 options, sa recette et les runes qu'il donne. Le brisage est estimé à partir du prix des runes et du coefficient. Saisis une valeur pour le remplacer, efface-la pour revenir à l'estimation. Les cases orange sont des prix à renseigner.</p>
           </div>
           <aside class="panel plan">
             <div class="panel-head"><h2>Plan optimal</h2><span class="sub">Le plus gros bénéfice pour ton budget</span></div>
@@ -273,6 +273,8 @@
           <div class="panel-head"><h2>Nouvelle série</h2><span class="sub">Le coût est pré-rempli avec tes prix actuels</span></div>
           <form id="jform" class="jform" novalidate>
             <div class="field wide"><label for="jItem">Item</label><select id="jItem"></select></div>
+            <div class="field"><label for="jSrc">Origine</label><select id="jSrc"><option value="craft">Craft</option><option value="achat">Achat</option></select></div>
+            <div class="field"><label for="jDest">Destination</label><select id="jDest"><option value="brisage">Brisage</option><option value="revente">Revente HDV</option></select></div>
             <div class="field"><label for="jQty">Quantité</label><input id="jQty" class="num" type="number" min="1" value="1"></div>
             <div class="field"><label for="jCost">Coût total</label><input id="jCost" class="num" type="number" min="0"></div>
             <div class="field"><label for="jBuy">Date d'achat</label><input id="jBuy" type="date"></div>
@@ -293,6 +295,7 @@
         </div>
         <div class="panel" id="realPanel">
           <div class="panel-head"><h2>Rendement réel par item</h2></div>
+          <div class="tbl-wrap"><table style="min-width:520px"><thead><tr><th class="l">Stratégie</th><th>Séries</th><th>Investi</th><th>Ventes</th><th>Bénéfice</th><th>Rendement réel</th></tr></thead><tbody id="realStrat"></tbody></table></div>
           <div class="tbl-wrap"><table style="min-width:520px"><thead><tr><th class="l">Item</th><th>Séries</th><th>Investi</th><th>Ventes</th><th>Bénéfice</th><th>Rendement réel</th></tr></thead><tbody id="real"></tbody></table></div>
         </div>
       </section>

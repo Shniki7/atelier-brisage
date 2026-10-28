@@ -96,12 +96,27 @@ function estBrk(s, M = S) {
   L.sort((x, y) => (y.val ?? -1) - (x.val ?? -1) || (y.runes * y.pts) - (x.runes * x.pts));
   return { val: miss ? null : part, part, miss, lines: L };
 }
+// Les 4 stratégies pour un item : d'où il vient (craft ou achat) × ce qu'on en fait (brisage ou revente HDV)
+const STRATS = [
+  { k: "cb", src: "craft", dest: "brisage", label: "Craft → Brisage" },
+  { k: "cv", src: "craft", dest: "revente", label: "Craft → Revente HDV" },
+  { k: "ab", src: "achat", dest: "brisage", label: "Achat → Brisage" },
+  { k: "av", src: "achat", dest: "revente", label: "Achat → Revente HDV" }
+];
+const stratOf = (src, dest) => STRATS.find(x => x.src === (src || "craft") && x.dest === (dest || "brisage"));
 function statsOf(s, M = S) {
-  const { cost, miss } = costOf(s, M); const est = estBrk(s, M);
+  const { cost, miss } = costOf(s, M); const est = estBrk(s, M); const t = taxe(M);
   const manual = +s.brk || 0; const gross = manual > 0 ? manual : (est.val || 0);
-  const brk = gross * (1 - taxe(M)); const src = manual > 0 ? "manuel" : est.val ? "estimé" : null;
-  const ok = !miss && cost > 0 && brk > 0;
-  return { cost, miss, brk, gross, src, est, ok, benef: ok ? brk - cost : null, roi: ok ? (brk - cost) / cost : null };
+  const brk = gross * (1 - t); const src = manual > 0 ? "manuel" : est.val ? "estimé" : null;
+  const pa = +s.pa || 0, pv = +s.pv || 0, pvNet = pv * (1 - t);
+  const IN = { craft: !miss && cost > 0 ? cost : null, achat: pa > 0 ? pa : null };
+  const OUT = { brisage: brk > 0 ? brk : null, revente: pv > 0 ? pvNet : null };
+  const opts = STRATS.map(o => {
+    const i = IN[o.src], x = OUT[o.dest], ok = i != null && x != null;
+    return { ...o, in: i, out: x, ok, benef: ok ? x - i : null, roi: ok ? (x - i) / i : null };
+  });
+  const best = opts.filter(o => o.ok).sort((p, q) => q.benef - p.benef)[0] || null;
+  return { cost, miss, brk, gross, src, est, pa, pv, pvNet, opts, best, ok: !!best, benef: best ? best.benef : null, roi: best ? best.roi : null };
 }
 const pillCls = r => r == null ? "p-na" : r < 0 ? "p-neg" : r >= 1.5 ? "p-great" : r >= .6 ? "p-ok" : "p-low";
 const pillTxt = r => (r >= 0 ? "+" : "") + Math.round(r * 100) + " %";
@@ -337,23 +352,31 @@ function renderCrafts() {
   keepFocus(() => {
     $("#crafts").innerHTML = rows.length ? rows.map(r => {
       const nm = r.it ? r.it.n : "Item retiré du jeu", isOpen = open.has(r.s.id);
-      const why = r.miss ? `${r.miss} prix de ressource${r.miss > 1 ? "s" : ""}` : !r.brk ? (r.est.none ? "brisage à saisir" : `${r.est.miss} prix de rune${r.est.miss > 1 ? "s" : ""}`) : "";
-      const roiCell = r.ok ? `<span class="pill ${pillCls(r.roi)}">${pillTxt(r.roi)}</span>` : `<span class="pill p-na" title="Il manque : ${why}">${why}</span>`;
+      const why = r.miss && !r.pa ? `${r.miss} prix de ressource${r.miss > 1 ? "s" : ""}` : !r.brk && !r.pv ? (r.est.none ? "brisage ou revente à saisir" : `${r.est.miss} prix de rune${r.est.miss > 1 ? "s" : ""}`) : "prix manquants";
+      const bestCell = r.best ? `<div class="best"><span class="pill ${pillCls(r.roi)}">${pillTxt(r.roi)}</span><b class="mono ${r.benef < 0 ? "neg" : "pos"}">${r.benef > 0 ? "+" : ""}${fmt(r.benef)}</b><small>${r.best.label}</small></div>` : `<span class="pill p-na" title="Il manque : ${why}">${why}</span>`;
       const ph = r.est.val ? "≈ " + fmt(r.est.val) : r.est.part ? "≥ " + kfmt(r.est.part) : "kamas";
       let html = `<tr class="item ${isOpen ? "open" : ""}" data-id="${r.s.id}">
         <td class="l"><div class="iname"><span class="chev">›</span><span>${esc(nm)}<small>${r.it ? `Niv. ${r.it.l} · ${esc(D.types[r.it.t] || "")} · ${esc(r.it.j)}` : ""}${r.s.r ? " · recette modifiée" : ""}</small></span></div></td>
         <td class="m">${r.miss ? (r.cost ? `<span class="neg" title="Coût partiel : prix manquants">≥ ${fmt(r.cost)}</span>` : `<span class="note">–</span>`) : fmt(r.cost)}</td>
-        <td><input class="num coef-in" id="coef-${r.s.id}" data-coef="${r.s.id}" data-col="coef" type="number" min="0" max="4000" value="${r.s.coef ?? 100}" aria-label="Coefficient de brisage de ${esc(nm)} en %"></td>
+        <td><input class="num pr-in" id="pa-${r.s.id}" data-ipa="${r.s.id}" data-col="pa" type="number" min="0" value="${r.s.pa || ""}" placeholder="–" title="Prix auquel tu peux acheter l'item tout fait (à un joueur ou à l'HDV)" aria-label="Prix d'achat de ${esc(nm)}"></td>
+        <td><input class="num pr-in" id="pv-${r.s.id}" data-ipv="${r.s.id}" data-col="pv" type="number" min="0" value="${r.s.pv || ""}" placeholder="–" title="Prix auquel l'item se vend à l'HDV (la taxe est déduite dans le calcul)" aria-label="Prix de revente HDV de ${esc(nm)}"></td>
         <td><input class="num brk-in" id="brk-${r.s.id}" data-brk="${r.s.id}" data-col="brk" type="number" min="0" value="${r.s.brk || ""}" placeholder="${ph}" aria-label="Valeur de brisage de ${esc(nm)}" title="${r.src === "estimé" ? "Estimé à partir des prix des runes. Saisis une valeur pour la remplacer." : r.src === "manuel" ? "Valeur saisie à la main. Efface-la pour revenir à l'estimation." : "Renseigne les prix des runes ou saisis une valeur."}">
-          <small class="note src">${r.src ? r.src + (tx ? ` · net ${fmt(r.brk)}` : "") : ""}</small></td>
-        <td class="m ${r.benef < 0 ? "neg" : r.benef > 0 ? "pos" : ""}">${r.ok ? fmt(r.benef) : "–"}</td>
-        <td>${roiCell}</td>
+          <small class="note src">coef ${r.s.coef ?? 100} %${r.src ? " · " + r.src : ""}</small></td>
+        <td>${bestCell}</td>
         <td class="acts"><button class="ghost own-only" data-serie="${r.s.id}" title="Ajouter une série de cet item au journal">+&nbsp;Série</button><button class="ghost x" data-del="${r.s.id}" title="Retirer de la liste" aria-label="Retirer ${esc(nm)}">×</button></td></tr>`;
       if (isOpen) {
         const rec = recipeOf(r.s);
         const costTxt = r.miss ? (r.cost ? "≥ " + fmt(r.cost) : "inconnu") : fmt(r.cost);
         const brkTxt = r.est.val ? fmt(r.est.val) : r.est.part ? "≥ " + fmt(r.est.part) : "inconnu";
-        html += `<tr class="detail"><td colspan="7"><div class="detail-grid">
+        const fmtIn = (o) => o.in != null ? fmt(o.in) : `<span class="note">${o.src === "achat" ? "prix d'achat ?" : r.miss ? "prix ressources ?" : "–"}</span>`;
+        const fmtOut = (o) => o.out != null ? fmt(o.out) : `<span class="note">${o.dest === "revente" ? "prix HDV ?" : "prix runes ?"}</span>`;
+        html += `<tr class="detail"><td colspan="7">
+          <section class="dcard d-cmp"><header><span class="dc-t">Les 4 options pour 1 exemplaire</span><span class="note">Taxe HDV de ${Math.round(tx * 1000) / 10} % déduite des ventes</span></header>
+          <div class="tbl-wrap" style="margin:0;padding:0 14px 6px"><table class="t-cmp"><thead><tr><th class="l">Option</th><th>Tu paies</th><th>Tu récupères</th><th>Bénéfice</th><th>Rendement</th></tr></thead><tbody>
+          ${r.opts.map(o => `<tr class="${r.best && r.best.k === o.k ? "is-best" : ""}"><td class="l">${r.best && r.best.k === o.k ? "★ " : ""}${o.label}</td><td class="m">${fmtIn(o)}</td><td class="m">${fmtOut(o)}</td>
+            <td class="m ${o.benef < 0 ? "neg" : o.benef > 0 ? "pos" : ""}">${o.ok ? fmt(o.benef) : "–"}</td><td>${o.ok ? `<span class="pill ${pillCls(o.roi)}">${pillTxt(o.roi)}</span>` : ""}</td></tr>`).join("")}
+          </tbody></table></div></section>
+          <div class="detail-grid">
           <section class="dcard d-in">
           <header><span class="dc-t"><span class="dc-ic">−</span>Recette · ce que tu dépenses</span><span class="dc-v">${costTxt}</span></header>
           <div class="recipe">
@@ -367,7 +390,7 @@ function renderCrafts() {
           <div class="rfoot"><span class="note">Coût : ${r.miss ? (r.cost ? `au moins <b class="mono">${fmt(r.cost)}</b>` : "inconnu") + ` · ${r.miss} prix manquant${r.miss > 1 ? "s" : ""}` : `<b class="mono">${fmt(r.cost)}</b>`}</span>
             ${r.s.r ? `<button class="ghost" data-rreset="${r.s.id}">Revenir à la recette du jeu</button>` : ""}</div></div></section>
           <section class="dcard d-out">
-          <header><span class="dc-t"><span class="dc-ic">+</span>Brisage · ce que tu récupères</span><span class="dc-v">${brkTxt}</span></header>
+          <header><span class="dc-t"><span class="dc-ic">+</span>Brisage · ce que tu récupères</span><span class="coef-l"><label for="coef-${r.s.id}">Coef.</label><input class="num coef-in" id="coef-${r.s.id}" data-coef="${r.s.id}" type="number" min="0" max="4000" value="${r.s.coef ?? 100}" aria-label="Coefficient de brisage de ${esc(nm)} en %">%</span><span class="dc-v">${brkTxt}</span></header>
           ${r.est.lines.length ? `<div class="recipe">
             <div class="rrow runes rhead"><span>Rune obtenue (jet moyen)</span><span style="text-align:right">Runes</span><span style="text-align:right">Prix rune</span><span style="text-align:right">Valeur</span></div>
             ${r.est.lines.map(l => `<div class="rrow runes"><span class="rn">${esc(l.nom)} <span class="note">${l.lo === l.hi ? l.lo : l.lo + "–" + l.hi}${l.pts > 1 ? ` · ${l.pts} pts/rune` : ""}</span></span>
@@ -432,9 +455,10 @@ function renderPlan(rows) {
   const drop = Math.min(50, Math.max(0, +$("#dropPct").value || 0)) / 100, all = $("#planAll").checked;
   let cands = rows.filter(r => r.ok && r.benef > 0);
   if (all) cands = cands.concat(allKnownItems());
+  cands = cands.map(r => ({ ...r, cost: r.best.in, brk: r.best.out }));
   const { picks, inv, ben } = optimizePlan(cands, budget, maxq, drop);
   const simple = greedyPlan(cands, budget, maxq, drop);
-  $("#plan").innerHTML = picks.length ? picks.map(p => `<li><span class="qty">${p.q}×</span><span>${esc(p.it.n)}${p.untracked ? ` <span class="grp-tag">non suivi</span> <button class="ghost own-only follow" data-follow="${p.it.id}" type="button">Suivre</button>` : ""}<br><small class="note">${fmt(p.cost)} pièce · ${pillTxt(p.roi)}${p.untracked ? " · coef. 100 %" : ""}</small></span><span class="pf">+${fmt(p.gain)}</span></li>`).join("")
+  $("#plan").innerHTML = picks.length ? picks.map(p => `<li><span class="qty">${p.q}×</span><span>${esc(p.it.n)}${p.untracked ? ` <span class="grp-tag">non suivi</span> <button class="ghost own-only follow" data-follow="${p.it.id}" type="button">Suivre</button>` : ""}<br><small class="note">${p.best.label} · ${fmt(p.cost)} pièce · ${pillTxt(p.roi)}${p.untracked ? " · coef. 100 %" : ""}</small></span><span class="pf">+${fmt(p.gain)}</span></li>`).join("")
     : `<li class="empty">${cands.length ? `Ton budget (${fmt(budget)}) ne suffit pas : le craft rentable le moins cher coûte ${fmt(Math.min(...cands.map(c => c.cost)))}. Augmente le budget.` : "Renseigne les prix des ressources et des runes pour obtenir un plan."}</li>`;
   $("#tInv").textContent = fmt(inv); $("#tBen").textContent = fmt(ben); $("#tLeft").textContent = fmt(budget - inv);
   $("#tRoi").textContent = inv ? pillTxt(ben / inv) : "–";
@@ -490,15 +514,17 @@ function renderJr() {
   keepFocus(() => {
     $("#jr").innerHTML = J.length ? J.map(e => {
       const R = realize(e), ben = R ? R.ventes - (+e.cout || 0) : null, roi = R && e.cout > 0 ? ben / e.cout : null;
-      const st = +e.encaisse > 0 ? ["s-done", "Vendu"] : +e.runes > 0 ? ["s-brk", "Brisé"] : ["s-run", "En stock"];
+      const sg = stratOf(e.src, e.dest), rev = sg.dest === "revente";
+      const st = +e.encaisse > 0 ? ["s-done", "Vendu"] : +e.runes > 0 ? ["s-brk", "Brisé"] : ["s-run", rev ? "À vendre" : "En stock"];
+      const qk = +e.encaisse > 0 ? null : (rev || +e.runes > 0) ? "vendu" : "brise";
       const inp = (f, type, w, extra = "") => `<td style="width:${w}px"><input ${type === "date" ? "" : 'class="num"'} id="j${f}-${e._id}" data-j="${e._id}" data-f="${f}" data-col="j-${f}" type="${type}" ${type === "number" ? 'min="0"' : ""} value="${esc(e[f] || "")}" ${extra}></td>`;
-      return `<tr><td class="l"><b>${esc(e.nom)}</b></td>
+      return `<tr><td class="l"><b>${esc(e.nom)}</b><small class="strat">${sg.label}</small></td>
         ${inp("qte", "number", 64, 'aria-label="Quantité"')}${inp("achat", "date", 138, 'aria-label="Date d\'achat"')}${inp("cout", "number", 104, 'aria-label="Coût total"')}
         ${inp("brisage", "date", 138, 'aria-label="Date de brisage"')}${inp("runes", "number", 104, 'placeholder="kamas" aria-label="Valeur des runes"')}
         ${inp("vente", "date", 138, 'aria-label="Date de vente"')}${inp("encaisse", "number", 104, 'placeholder="kamas" aria-label="Kamas encaissés"')}
         <td class="m ${ben < 0 ? "neg" : ben > 0 ? "pos" : ""}">${R ? fmt(ben) : "–"}</td>
         <td>${roi != null ? `<span class="pill ${pillCls(roi)}">${pillTxt(roi)}</span>` : ""}</td>
-        <td class="l"><span class="status ${st[0]}">${st[1]}</span>${!(+e.encaisse > 0) ? ` <button class="quick own-only" data-quick="${+e.runes > 0 ? "vendu" : "brise"}" data-jid="${e._id}" title="${+e.runes > 0 ? "Marquer vendu aujourd'hui (raccourci : V)" : "Marquer brisé aujourd'hui (raccourci : B)"}">${+e.runes > 0 ? "Vendu" : "Brisé"}</button>` : ""}</td>
+        <td class="l"><span class="status ${st[0]}">${st[1]}</span>${qk ? ` <button class="quick own-only" data-quick="${qk}" data-jid="${e._id}" title="${qk === "vendu" ? "Marquer vendu aujourd'hui (raccourci : V)" : "Marquer brisé aujourd'hui (raccourci : B)"}">${qk === "vendu" ? "Vendu" : "Brisé"}</button>` : ""}</td>
         <td><button class="ghost x" data-jdel="${e._id}" aria-label="Supprimer la ligne" title="Supprimer">×</button></td></tr>`;
     }).join("") : `<tr><td colspan="12" class="empty">${isMe() ? "Aucune série enregistrée. Ajoute ton premier achat ci-dessus." : "Ce membre n'a encore enregistré aucune série."}</td></tr>`;
   });
@@ -506,19 +532,28 @@ function renderJr() {
   const inv = done.reduce((a, e) => a + (+e.cout || 0), 0), rn = done.reduce((a, e) => a + realize(e).ventes, 0);
   const stock = run.reduce((a, e) => a + (+e.cout || 0), 0);
   $("#jtot").innerHTML = `<div class="tot"><span>Investi au total</span><b>${fmt(inv + stock)}</b></div>
-    <div class="tot"><span>En attente de brisage</span><b>${fmt(stock)}</b><small class="note">${run.length} série(s)</small></div>
+    <div class="tot"><span>En cours</span><b>${fmt(stock)}</b><small class="note">${run.length} série(s)</small></div>
     <div class="tot"><span>Ventes / runes</span><b>${fmt(rn)}</b><small class="note">${done.length} série(s) brisée(s) ou vendue(s)</small></div>
     <div class="tot big"><span>Bénéfice réalisé</span><b>${done.length ? fmt(rn - inv) : "–"}</b></div>
     <div class="tot"><span>Rendement réalisé</span><b>${inv ? pillTxt((rn - inv) / inv) : "–"}</b></div>`;
   $("#jHint").hidden = !(run.length && isMe());
-  $("#jHint").innerHTML = `<b>${run.length} série${run.length > 1 ? "s" : ""} en stock.</b> Une série ne compte dans le bénéfice qu'une fois brisée : clique <b>Brisé</b> (ou saisis la date et la valeur des runes), puis <b>Vendu</b> quand tu as encaissé.`;
+  $("#jHint").innerHTML = `<b>${run.length} série${run.length > 1 ? "s" : ""} en cours.</b> Une série compte dans le bénéfice une fois brisée ou vendue : clique <b>Brisé</b> (ou saisis la valeur des runes), puis <b>Vendu</b> quand tu as encaissé. Pour une revente en HDV, clique directement <b>Vendu</b>.`;
   const arr = byItem(done);
   $("#realPanel").hidden = !arr.length;
+  const bs = new Map();
+  for (const e of done) { const k = stratOf(e.src, e.dest).label; const o = bs.get(k) || { k, n: 0, inv: 0, rn: 0 }; o.n++; o.inv += +e.cout || 0; o.rn += realize(e).ventes; bs.set(k, o); }
+  $("#realStrat").innerHTML = [...bs.values()].sort((a, b) => (b.rn - b.inv) - (a.rn - a.inv)).map(o => { const roi = o.inv ? (o.rn - o.inv) / o.inv : null; return `<tr><td class="l"><b>${o.k}</b></td><td class="m">${o.n}</td><td class="m">${fmt(o.inv)}</td><td class="m">${fmt(o.rn)}</td><td class="m ${o.rn - o.inv < 0 ? "neg" : "pos"}">${fmt(o.rn - o.inv)}</td><td>${roi != null ? `<span class="pill ${pillCls(roi)}">${pillTxt(roi)}</span>` : ""}</td></tr>`; }).join("");
   $("#real").innerHTML = arr.map(o => `<tr><td class="l"><b>${esc(o.k)}</b></td><td class="m">${o.n}</td><td class="m">${fmt(o.inv)}</td><td class="m">${fmt(o.rn)}</td><td class="m ${o.rn - o.inv < 0 ? "neg" : "pos"}">${fmt(o.rn - o.inv)}</td><td>${o.roi != null ? `<span class="pill ${pillCls(o.roi)}">${pillTxt(o.roi)}</span>` : ""}</td></tr>`).join("");
 }
 function prefillCost() {
   const s = S.suivi.find(x => String(x.id) === $("#jItem").value); const q = Math.max(1, +$("#jQty").value || 1);
-  if (!s) { $("#jCost").value = ""; return; } const c = costOf(s); $("#jCost").value = c.cost ? Math.round(c.cost * q) : "";
+  if (!s) { $("#jCost").value = ""; return; }
+  if ($("#jSrc").value === "achat") { $("#jCost").value = +s.pa ? Math.round(s.pa * q) : ""; return; }
+  const c = costOf(s); $("#jCost").value = c.cost && !c.miss ? Math.round(c.cost * q) : "";
+}
+function prefillStrat() {
+  const s = S.suivi.find(x => String(x.id) === $("#jItem").value); const b = s && statsOf(s).best;
+  if (b) { $("#jSrc").value = b.src; $("#jDest").value = b.dest; }
 }
 
 // ---------------------------------------------------------------- tableau de bord
@@ -751,6 +786,9 @@ $("#qres").addEventListener("mousedown", e => { const li = e.target.closest("[da
 $("#q").addEventListener("blur", () => setTimeout(() => $("#qres").hidden = true, 120));
 
 // ---------------------------------------------------------------- saisie
+// Re-rendu après « change » : on attend que le focus soit arrivé dans la case cliquée,
+// sinon la case serait reconstruite sous le curseur et la saisie partirait dans le vide.
+let defT; function deferRender() { clearTimeout(defT); defT = setTimeout(() => { clearTimeout(softT); render(); }, 0); }
 let softT; function softCrafts() { clearTimeout(softT); softT = setTimeout(() => { if (tab === "crafts") { renderCrafts(); applyRO(); } }, 450); }
 function setPrice(rid, v) {
   pendingPrix.add("prix:" + rid); const n = +v || 0;
@@ -768,6 +806,7 @@ document.addEventListener("input", e => {
   if (t.dataset.price) { setPrice(t.dataset.price, t.value); t.classList.toggle("miss", !(+t.value > 0)); if (tab === "crafts") softCrafts(); return; }
   if (t.dataset.runep) { setRuneP(t.dataset.runep, t.value); t.classList.toggle("miss", !(+t.value > 0)); if (tab === "crafts") softCrafts(); return; }
   if (t.dataset.runepts) { setRunePts(t.dataset.runepts, t.value); return; }
+  if (t.dataset.ipa || t.dataset.ipv) { const k = t.dataset.ipa ? "pa" : "pv", s = S.suivi.find(x => x.id === +(t.dataset.ipa || t.dataset.ipv)); s[k] = +t.value || 0; s[k === "pa" ? "ma" : "mv"] = today(); saveSuiviLater(); softCrafts(); return; }
   if (t.dataset.coef) { const s = S.suivi.find(x => x.id === +t.dataset.coef); s.coef = t.value === "" ? 100 : Math.min(4000, Math.max(0, +t.value || 0)); saveSuiviLater(); softCrafts(); return; }
   if (t.id === "cfgTaxe") { setCfg("taxe", Math.min(50, Math.max(0, +t.value || 0))); return; }
   if (t.dataset.brk) { const s = S.suivi.find(x => x.id === +t.dataset.brk); s.brk = +t.value || 0; saveSuiviLater(); softCrafts(); return; }
@@ -783,11 +822,12 @@ document.addEventListener("input", e => {
 });
 document.addEventListener("change", e => {
   const t = e.target;
-  if (t.dataset.price || t.dataset.brk || t.dataset.rq || t.dataset.runep || t.dataset.runepts || t.dataset.coef || t.id === "cfgTaxe") render();
+  if (t.dataset.price || t.dataset.brk || t.dataset.rq || t.dataset.runep || t.dataset.runepts || t.dataset.coef || t.dataset.ipa || t.dataset.ipv || t.id === "cfgTaxe") deferRender();
   if (t.dataset.rec && isMe()) { pendingPrix.add("rec:" + t.dataset.rec); if (t.checked) S.rec[t.dataset.rec] = true; else delete S.rec[t.dataset.rec]; Store.savePrix(); render(); }
   if (t.id === "cfgRecolte" && isMe()) { setCfg("recolte", t.value); Store.savePrix(); render(); }
-  if (t.dataset.j) { renderJr(); applyRO(); }
-  if (t.id === "jItem") { delete $("#jCost").dataset.touched; prefillCost(); }
+  if (t.dataset.j) setTimeout(() => { renderJr(); applyRO(); }, 0);
+  if (t.id === "jItem") { delete $("#jCost").dataset.touched; prefillStrat(); prefillCost(); }
+  if (t.id === "jSrc") { delete $("#jCost").dataset.touched; prefillCost(); }
 });
 $("#crafts").addEventListener("click", e => {
   const t = e.target; if (t.closest("input")) return;
@@ -806,7 +846,7 @@ $("#jform").addEventListener("submit", e => {
   const it = ITEMS.get(id); const qte = Math.max(1, +$("#jQty").value || 1); const cout = +$("#jCost").value || 0;
   if (!cout) { jErr("Indique le coût total de la série (les prix des ressources de cet item ne sont pas tous renseignés, donc il n'a pas pu être calculé)."); $("#jCost").classList.add("miss"); $("#jCost").focus(); return; }
   jErr(""); $("#jCost").classList.remove("miss");
-  Store.addJr({ item: id, nom: it.n, qte, cout, achat: $("#jBuy").value || today(), brisage: "", runes: 0, vente: "", encaisse: 0 });
+  Store.addJr({ item: id, nom: it.n, qte, cout, achat: $("#jBuy").value || today(), brisage: "", runes: 0, vente: "", encaisse: 0, src: $("#jSrc").value, dest: $("#jDest").value });
   delete $("#jCost").dataset.touched; $("#jQty").value = 1; prefillCost(); toast("Série ajoutée au journal");
 });
 $("#jr").addEventListener("click", e => {
@@ -852,9 +892,10 @@ async function importData(d) {
 // ---------------------------------------------------------------- saisie rapide
 function quickSerie(id) {
   if (!isMe()) return; const s = S.suivi.find(x => x.id === id); const it = ITEMS.get(id); if (!s || !it) return;
-  const c = costOf(s);
-  Store.addJr({ item: id, nom: it.n, qte: 1, cout: c.miss ? 0 : Math.round(c.cost), achat: today(), brisage: "", runes: 0, vente: "", encaisse: 0 });
-  toast(c.miss ? `Série de ${it.n} ajoutée : complète son coût dans le journal` : `Série de ${it.n} ajoutée au journal (${fmt(c.cost)})`);
+  const st = statsOf(s), b = st.best || stratOf("craft", "brisage");
+  const cout = b.src === "achat" ? (+s.pa || 0) : (st.miss ? 0 : Math.round(st.cost));
+  Store.addJr({ item: id, nom: it.n, qte: 1, cout, achat: today(), brisage: "", runes: 0, vente: "", encaisse: 0, src: b.src, dest: b.dest });
+  toast(cout ? `Série de ${it.n} ajoutée au journal : ${b.label} (${fmt(cout)})` : `Série de ${it.n} ajoutée : complète son coût dans le journal`);
 }
 function quickJr(jid, kind) {
   const e = S.journal.find(j => j._id === jid); if (!e) return;
@@ -865,7 +906,8 @@ function quickJr(jid, kind) {
     if (!runes) { const el = document.getElementById("jruns-" + jid) || document.getElementById("jrunes-" + jid); el?.focus(); toast("Brisé aujourd'hui : saisis la valeur des runes"); }
     else toast(`Brisé aujourd'hui · runes estimées ${fmt(runes)}`);
   } else {
-    const enc = Math.round((+e.runes || 0) * (1 - taxe()));
+    const s = S.suivi.find(x => x.id === e.item);
+    const enc = Math.round(+e.runes > 0 ? e.runes * (1 - taxe()) : (+s?.pv || 0) * (e.qte || 1) * (1 - taxe()));
     const patch = { vente: today(), encaisse: enc }; Object.assign(e, patch); Store.updJr(jid, patch); renderJr(); applyRO();
     const el = document.getElementById("jencaisse-" + jid); el?.focus(); el?.select();
     toast(`Vendu aujourd'hui · ${fmt(enc)} encaissés (taxe déduite). Corrige si besoin.`);
