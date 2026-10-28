@@ -24,6 +24,7 @@
   <symbol id="i-out" viewBox="0 0 24 24"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4M16 17l5-5-5-5M21 12H9"/></symbol>
   <symbol id="i-eye" viewBox="0 0 24 24"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12z"/><circle cx="12" cy="12" r="3"/></symbol>
   <symbol id="i-home" viewBox="0 0 24 24"><path d="M3 10.5 12 3l9 7.5V20a1 1 0 0 1-1 1h-5v-6h-6v6H4a1 1 0 0 1-1-1z"/></symbol>
+  <symbol id="i-paw" viewBox="0 0 24 24"><circle cx="5.5" cy="10" r="2"/><circle cx="9.5" cy="5.5" r="2"/><circle cx="14.5" cy="5.5" r="2"/><circle cx="18.5" cy="10" r="2"/><path d="M12 11c-3 0-6 4.5-6 7a2.5 2.5 0 0 0 3 2.4c1-.2 2-.6 3-.6s2 .4 3 .6A2.5 2.5 0 0 0 18 18c0-2.5-3-7-6-7z"/></symbol>
   <symbol id="i-plus" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></symbol>
   <symbol id="i-key" viewBox="0 0 24 24"><rect x="2" y="6" width="20" height="12" rx="2"/><path d="M6 10h.01M10 10h.01M14 10h.01M18 10h.01M7 14h10"/></symbol>
 </svg>
@@ -89,6 +90,7 @@
         <button role="tab" aria-selected="false" data-tab="jr"><svg class="i"><use href="#i-jr"/></svg><span class="lab"><i class="stepno">3</i>Mes séries</span><span class="count" id="cJr">0</span></button>
         <button role="tab" aria-selected="false" data-tab="dash"><svg class="i"><use href="#i-dash"/></svg><span class="lab"><i class="stepno">4</i>Résultats</span></button>
         <button role="tab" aria-selected="false" data-tab="grp"><svg class="i"><use href="#i-grp"/></svg><span class="lab">Le groupe</span><span class="count" id="cGrp">0</span></button>
+        <button role="tab" aria-selected="false" data-tab="pet"><svg class="i"><use href="#i-paw"/></svg><span class="lab">Familiers</span></button>
       </nav>
     </div>
     <div class="grp-block">
@@ -128,6 +130,39 @@
             <div class="panel-head"><h2>Meilleures opportunités</h2></div>
             <ul class="kv home-opp" id="homeOpp"></ul>
           </div>
+        </div>
+      </section>
+
+      <!-- FAMILIERS -->
+      <section id="v-pet" class="stack" hidden>
+        <div class="panel">
+          <div class="panel-head"><h2>Mon objectif</h2><span class="sub">Courbe d'XP officielle des familiers (fichiers du jeu)</span></div>
+          <div class="row pet-goal">
+            <div class="field"><label for="petFrom">Niveau actuel</label><input id="petFrom" class="num keep" type="number" min="0" max="99" value="0"></div>
+            <div class="field"><label for="petTo">Niveau visé</label><input id="petTo" class="num keep" type="number" min="1" max="100" value="100"></div>
+            <div class="tot big"><span>XP à donner</span><b id="petXp">0</b></div>
+            <div class="tot"><span>Le moins cher</span><b id="petBest">–</b></div>
+          </div>
+        </div>
+        <div class="panel">
+          <div class="panel-head"><h2>Que donner à manger ?</h2>
+            <div class="search own-only"><input id="pq" type="search" placeholder="Ajouter une ressource" autocomplete="off" aria-label="Ajouter une ressource au tableau"><ul class="results" id="pqres" hidden></ul></div>
+          </div>
+          <div class="tbl-wrap">
+            <table class="t-pet">
+              <thead><tr><th class="l">Ressource</th><th title="XP donnée par une unité. Le jeu l'affiche quand tu nourris : confirme ou corrige.">XP par unité</th><th>Prix unitaire</th><th>Prix pour 1 000 XP</th><th>Quantité pour l'objectif</th><th>Coût de l'objectif</th><th></th></tr></thead>
+              <tbody id="pet" data-freeze="pet"></tbody>
+            </table>
+          </div>
+          <p class="note">Classé du moins cher au plus cher pour 1 000 XP. Les XP marquées <span class="tag-g">guide</span> viennent de guides communautaires et sont à vérifier ; celles marquées <span class="grp-tag">groupe</span> ont été saisies par tes copains. Pour connaître l'XP exacte, glisse la ressource dans la fenêtre « Nourrir » du jeu : il affiche l'XP gagnée. Les prix sont les mêmes que dans Prix du marché.</p>
+        </div>
+        <div class="panel">
+          <div class="panel-head"><h2>Astuces</h2></div>
+          <ul class="tips">
+            <li><b>Nourris avec les pépites directement.</b> Une pépite donne environ 1,25 XP, alors qu'une croquette (500 XP) coûte 500 pépites au Temple des alliances : 1 XP par pépite.</li>
+            <li><b>Nourris par gros lots ronds.</b> Le jeu arrondit l'XP à l'entier inférieur sur le lot entier : donner 100 unités d'un coup peut rapporter plus que 99 puis 101.</li>
+            <li><b>Compare avec un familier déjà monté.</b> Si le même familier niveau 100 coûte moins que le coût de l'objectif ci-dessus, achète-le tout fait.</li>
+          </ul>
         </div>
       </section>
 

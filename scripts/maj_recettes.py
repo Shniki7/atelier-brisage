@@ -96,6 +96,25 @@ if len(items) < 2500 or incoherences > 50 or len(fx) < 2000:
     print("Extraction anormale : data/recettes.json n'est pas modifié.")
     sys.exit(1)
 
+# ---- familiers : toutes les ressources (pour le tableau d'XP), courbe d'XP des familiers ----
+allres = {}
+for iid, nid, tid, lvl in I.values():
+    ty = Ty.get(tid)
+    if not ty or ty[1] != 2:          # catégorie 2 = ressources
+        continue
+    n = nm(nid)
+    if n and not n.startswith('Cadeau'):
+        allres[str(iid)] = n
+curve = c.execute("select experienceByLevel from EvolutiveItemTypeData where id=1").fetchone()
+petcurve = json.loads(curve[0]) if curve else []
+# XP par unité relevées dans des guides communautaires (à confirmer en jeu)
+GUIDE_XP = {'Croquette enrichie': 500, 'Pépite': 1.25, 'Eau calme': 0.5, 'Pierre de Granit': 0.8,
+            'Peau de Don Duss Ang': 0.8, 'Peau de Don Dorgan': 0.9, 'Cuir de Porsalu': 0.9,
+            'Rune Ré Pa': 3, 'Essence du Capitaine Ekarlatte': 135}
+by_name = {v: k for k, v in allres.items()}
+petxp = {by_name[n]: x for n, x in GUIDE_XP.items() if n in by_name}
+print(f"ressources={len(allres)} courbe={len(petcurve)} xp_guides={len(petxp)}")
+
 d = {
     'src': 'Dofus 3 (dofus-sqlite, ' + datetime.date.today().strftime('%d/%m/%Y') + ')',
     'types': {str(k): v for k, v in types.items()},
@@ -103,6 +122,9 @@ d = {
     'items': items,
     'fx': fx,
     'stats': stats,
+    'allres': allres,
+    'petcurve': petcurve,
+    'petxp': petxp,
 }
 with open(dst, 'w', encoding='utf-8') as f:
     f.write(json.dumps(d, ensure_ascii=False, separators=(',', ':')))

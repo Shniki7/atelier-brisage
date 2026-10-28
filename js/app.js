@@ -31,7 +31,7 @@ let gran = lsGet("gran") || "semaine", ggran = lsGet("ggran") || "semaine", demo
 const pendingPrix = new Set();
 const pendingJ = new Map();                 // saisies du journal pas encore confirmées par le serveur : id -> {champ: valeur}
 
-function blank() { return { p: {}, prix: {}, maj: {}, rp: {}, rm: {}, rpt: {}, rec: {}, cfg: { taxe: 2, recolte: "hdv" }, suivi: [], journal: [], loaded: false }; }
+function blank() { return { p: {}, prix: {}, maj: {}, rp: {}, rm: {}, rpt: {}, rec: {}, xp: {}, pl: [], cfg: { taxe: 2, recolte: "hdv" }, suivi: [], journal: [], loaded: false }; }
 function member(uid) { if (!MEMBERS.has(uid)) MEMBERS.set(uid, blank()); return MEMBERS.get(uid); }
 const isMe = () => VIEW === ME;
 const ro = () => !isMe();
@@ -207,10 +207,11 @@ function subscribeMember(uid) {
   const base = db.doc(`profiles/${uid}`);
   unsubs.push(base.collection("data").doc("prix").onSnapshot(snap => {
     const d = snap.data() || {};
-    const nx = { prix: { ...(d.p || {}) }, maj: { ...(d.m || {}) }, rp: { ...(d.rp || {}) }, rm: { ...(d.rm || {}) }, rpt: { ...(d.rpt || {}) }, rec: { ...(d.r || {}) }, cfg: { taxe: 2, recolte: "hdv", ...(d.cfg || {}) } };
+    const nx = { prix: { ...(d.p || {}) }, maj: { ...(d.m || {}) }, rp: { ...(d.rp || {}) }, rm: { ...(d.rm || {}) }, rpt: { ...(d.rpt || {}) }, rec: { ...(d.r || {}) }, xp: { ...(d.xp || {}) }, pl: [...(d.pl || [])], cfg: { taxe: 2, recolte: "hdv", ...(d.cfg || {}) } };
     if (uid === ME) for (const k of pendingPrix) {           // garder les saisies pas encore enregistrées
       const [f, id] = k.split(":");
       if (f === "cfg") { nx.cfg = { ...m.cfg }; continue; }
+      if (f === "pl") { nx.pl = [...m.pl]; continue; }
       const date = f === "prix" ? "maj" : f === "rp" ? "rm" : null;
       if (m[f][id] != null && m[f][id] !== false && m[f][id] !== 0) nx[f][id] = m[f][id]; else delete nx[f][id];
       if (date) nx[date][id] = m[date][id];
@@ -241,7 +242,7 @@ function showError(msg) {
   b.querySelector("button").onclick = () => b.remove();
 }
 const Store = {
-  savePrix() { if (!isMe()) return; pendingPrix.clear(); db.doc(`profiles/${ME}/data/prix`).set({ p: { ...S.prix }, m: { ...S.maj }, rp: { ...S.rp }, rm: { ...S.rm }, rpt: { ...S.rpt }, r: { ...S.rec }, cfg: { ...S.cfg } }).catch(fail); },
+  savePrix() { if (!isMe()) return; pendingPrix.clear(); db.doc(`profiles/${ME}/data/prix`).set({ p: { ...S.prix }, m: { ...S.maj }, rp: { ...S.rp }, rm: { ...S.rm }, rpt: { ...S.rpt }, r: { ...S.rec }, xp: { ...S.xp }, pl: [...S.pl], cfg: { ...S.cfg } }).catch(fail); },
   saveSuivi() { if (!isMe()) return; timers.suivi = null; db.doc(`profiles/${ME}/data/suivi`).set({ items: S.suivi.map(x => ({ ...x })) }).catch(fail); },
   addJr(e) { if (!isMe()) return; db.collection(`profiles/${ME}/journal`).add(e).catch(fail); },
   updJr(id, patch) {
@@ -292,6 +293,7 @@ const TITLES = {
   home: ["Aujourd'hui", "Où tu en es, et la prochaine chose à faire"],
   dash: ["Résultats", "Ce que tu as vraiment gagné : par jour, semaine, mois, année"],
   grp: ["Le groupe", "Bilans et classement des membres"],
+  pet: ["Familiers", "Monter un familier au meilleur prix"],
   crafts: ["Opportunités", "Quoi crafter ou acheter, et quoi en faire, pour gagner le plus"],
   res: ["Prix du marché", "Tous tes prix au même endroit"],
   jr: ["Mes séries", "Ce que tu as lancé, de l'achat jusqu'à la vente"]
@@ -301,7 +303,7 @@ function setTab(t) {
   tab = t; lsSet("tab", t);
   $("#pageTitle").textContent = TITLES[t][0]; $("#pageSub").textContent = TITLES[t][1];
   document.querySelectorAll("nav [data-tab]").forEach(x => x.setAttribute("aria-selected", x.dataset.tab === t));
-  ["home", "dash", "grp", "crafts", "res", "jr"].forEach(x => $("#v-" + x).hidden = x !== t);
+  ["home", "dash", "grp", "crafts", "res", "jr", "pet"].forEach(x => $("#v-" + x).hidden = x !== t);
   if (t === "dash") lsSet("lastDash", today());
   render();
 }
@@ -317,6 +319,7 @@ function render() {
   const nRun = S.journal.filter(e => !(+e.encaisse > 0)).length;
   $("#cJr").textContent = nRun; $("#cJr").title = `${nRun} série(s) en cours`;
   if (tab === "home") renderHome();
+  if (tab === "pet") renderPet();
   if (tab === "dash") renderDash();
   if (tab === "grp") renderGroup();
   if (tab === "crafts") renderCrafts();
@@ -326,7 +329,7 @@ function render() {
 }
 function applyRO() {
   const r = ro();
-  document.querySelectorAll("#v-crafts input, #v-crafts select, #v-res input, #v-res select, #v-jr input, #v-jr select").forEach(x => { if (!x.classList.contains("keep")) x.disabled = r; });
+  document.querySelectorAll("#v-crafts input, #v-crafts select, #v-res input, #v-res select, #v-jr input, #v-jr select, #v-pet tbody input").forEach(x => { if (!x.classList.contains("keep")) x.disabled = r; });
   document.querySelectorAll("#v-crafts .x, #v-jr .x, [data-rreset]").forEach(x => x.hidden = r);
 }
 function keepFocus(fn) {
@@ -576,6 +579,53 @@ function renderHome() {
   const best = c.st.filter(r => r.ok && r.benef > 0).sort((a, b) => b.benef - a.benef).slice(0, 5);
   $("#homeOpp").innerHTML = best.length ? best.map(r => `<li><span><b>${esc(r.it?.n || r.s.id)}</b><small class="strat">${stratTxt(r.best)} · ${pillTxt(r.roi)}</small></span><span class="ho-r"><b class="mono pos">+${fmt(r.benef)}</b>${me ? `<button class="ghost" data-launch-h="${r.s.id}" type="button">Lancer</button>` : ""}</span></li>`).join("")
     : `<li><span class="note">Aucune opportunité chiffrée pour l'instant.</span></li>`;
+}
+
+// ----- Familiers : XP par ressource (moi > groupe > guide) et coût pour atteindre un niveau
+const resName = id => D.allres?.[id] || D.res?.[id] || "Ressource " + id;
+function xpInfo(id, M = S) {
+  const v = +M.xp?.[id]; if (v > 0) return { v, src: "moi" };
+  const vals = []; for (const [, m] of MEMBERS) { if (m === M) continue; const x = +m.xp?.[id]; if (x > 0) vals.push(x); }
+  if (vals.length) return { v: median(vals), src: "groupe", n: vals.length };
+  const g = +D.petxp?.[id]; return g > 0 ? { v: g, src: "guide" } : { v: null, src: null };
+}
+function petIds() {
+  const ids = new Set([...Object.keys(D.petxp || {}), ...Object.keys(S.xp || {}), ...(S.pl || []).map(String)]);
+  for (const [, m] of MEMBERS) for (const k of Object.keys(m.xp || {})) ids.add(k);
+  return [...ids];
+}
+function renderPet() {
+  const C = D.petcurve || []; const from = Math.max(0, Math.min(99, Math.floor(+$("#petFrom").value || 0))), to = Math.max(from + 1, Math.min(100, Math.floor(+$("#petTo").value || 100)));
+  const need = Math.max(0, (C[to] || 0) - (C[from] || 0));
+  $("#petXp").textContent = fmt(need);
+  const rows = stableOrder("pet", petIds().map(id => { const xi = xpInfo(id), pi = priceInfo(id); const per = xi.v > 0 && pi.v != null ? pi.v / xi.v * 1000 : null; return { id, xi, pi, per, qty: xi.v > 0 ? Math.ceil(need / xi.v) : null }; }),
+    r => r.id, (a, b) => (a.per ?? 1e18) - (b.per ?? 1e18) || resName(a.id).localeCompare(resName(b.id), "fr"));
+  const best = rows.find(r => r.per != null);
+  $("#petBest").innerHTML = best ? `${esc(resName(best.id))}<small class="note" style="display:block;font-family:var(--body);font-size:12px">${fmt(best.per * need / 1000)} kamas</small>` : "–";
+  const tagOf = x => x.src === "groupe" ? `<span class="grp-tag" title="Médiane de ${x.n} membre(s)">groupe</span>` : x.src === "guide" ? `<span class="tag-g" title="Valeur relevée dans un guide, à vérifier">guide</span>` : "";
+  keepFocus(() => {
+    $("#pet").innerHTML = rows.length ? rows.map(r => { const own = S.xp[r.id], p = S.prix[r.id]; return `<tr class="${best && r.id === best.id ? "is-best" : ""}">
+      <td class="l"><b>${best && r.id === best.id ? "★ " : ""}${esc(resName(r.id))}</b> ${tagOf(r.xi)}</td>
+      <td><input class="num ${own > 0 ? "" : r.xi.v ? "grp" : "miss"}" id="xp-${r.id}" data-xp="${r.id}" data-col="xp" type="number" min="0" step="0.01" value="${own || ""}" placeholder="${r.xi.v ? r.xi.v.toLocaleString("fr-FR") : "XP ?"}" aria-label="XP par unité de ${esc(resName(r.id))}"></td>
+      <td><input class="num ${phCls(r.pi, p)}" id="px-${r.id}" data-price="${r.id}" data-col="px" type="number" min="0" value="${p || ""}" placeholder="${phTxt(r.pi)}" title="${phTitle(r.pi)}" aria-label="Prix de ${esc(resName(r.id))}"></td>
+      <td class="m"><b>${r.per != null ? fmt(r.per) : "–"}</b></td>
+      <td class="m">${r.qty != null ? fmt(r.qty) : "–"}</td>
+      <td class="m">${r.per != null ? fmt(r.per * need / 1000) : "–"}</td>
+      <td class="acts">${(S.pl || []).map(String).includes(r.id) ? `<button class="ghost x own-only" data-pldel="${r.id}" aria-label="Retirer">×</button>` : ""}</td></tr>`; }).join("")
+      : `<tr><td colspan="7" class="empty">Ajoute une ressource avec la recherche ci-dessus.</td></tr>`;
+  });
+}
+let phits = [], phl = 0;
+function petSearch(v) {
+  const f = norm(v.trim()), box = $("#pqres"); if (f.length < 2) { box.hidden = true; return; }
+  const toks = f.split(/\s+/); phits = Object.entries(D.allres || {}).filter(([, n]) => toks.every(t => norm(n).includes(t))).slice(0, 14); phl = 0;
+  box.innerHTML = phits.length ? phits.map(([id, n], i) => `<li data-padd="${id}" class="${i ? "" : "hl"}"><span>${esc(n)}</span><small>${xpInfo(id).v ? xpInfo(id).v + " XP" : ""}</small></li>`).join("") : `<li class="note">Aucune ressource trouvée</li>`;
+  box.hidden = false;
+}
+function petAdd(id) {
+  $("#pqres").hidden = true; $("#pq").value = ""; if (!isMe()) return;
+  if (!S.pl.map(String).includes(String(id))) { S.pl.push(String(id)); pendingPrix.add("pl:"); Store.savePrix(); }
+  render(); setTimeout(() => document.getElementById("xp-" + id)?.focus(), 50);
 }
 
 // ----- Prix du marché
@@ -967,6 +1017,7 @@ document.addEventListener("input", e => {
   if (t.dataset.price) { setPrice(t.dataset.price, t.value); t.classList.toggle("miss", !(+t.value > 0)); if (tab === "crafts") softCrafts(); return; }
   if (t.dataset.runep) { setRuneP(t.dataset.runep, t.value); t.classList.toggle("miss", !(+t.value > 0)); if (tab === "crafts") softCrafts(); return; }
   if (t.dataset.runepts) { setRunePts(t.dataset.runepts, t.value); return; }
+  if (t.dataset.xp) { pendingPrix.add("xp:" + t.dataset.xp); const n = +t.value || 0; if (n > 0) S.xp[t.dataset.xp] = n; else delete S.xp[t.dataset.xp]; later("prix", () => Store.savePrix()); return; }
   if (t.dataset.ipa || t.dataset.ipv) { const k = t.dataset.ipa ? "pa" : "pv", s = S.suivi.find(x => x.id === +(t.dataset.ipa || t.dataset.ipv)); s[k] = +t.value || 0; s[k === "pa" ? "ma" : "mv"] = today(); saveSuiviLater(); softCrafts(); return; }
   if (t.dataset.coef) { const s = S.suivi.find(x => x.id === +t.dataset.coef); s.coef = t.value === "" ? 100 : Math.min(4000, Math.max(0, +t.value || 0)); saveSuiviLater(); softCrafts(); return; }
   if (t.id === "cfgTaxe") { setCfg("taxe", Math.min(50, Math.max(0, +t.value || 0))); return; }
@@ -983,7 +1034,7 @@ document.addEventListener("input", e => {
 });
 document.addEventListener("change", e => {
   const t = e.target;
-  if (t.dataset.price || t.dataset.brk || t.dataset.rq || t.dataset.runep || t.dataset.runepts || t.dataset.coef || t.dataset.ipa || t.dataset.ipv || t.id === "cfgTaxe") deferRender();
+  if (t.dataset.price || t.dataset.brk || t.dataset.rq || t.dataset.runep || t.dataset.runepts || t.dataset.coef || t.dataset.ipa || t.dataset.ipv || t.dataset.xp || t.id === "cfgTaxe") deferRender();
   if (t.dataset.rec && isMe()) { pendingPrix.add("rec:" + t.dataset.rec); if (t.checked) S.rec[t.dataset.rec] = true; else delete S.rec[t.dataset.rec]; Store.savePrix(); render(); }
   if (t.id === "cfgRecolte" && isMe()) { setCfg("recolte", t.value); Store.savePrix(); render(); }
   if (t.dataset.j) setTimeout(() => { renderJr(); applyRO(); }, 0);
@@ -1143,6 +1194,12 @@ $("#v-home").addEventListener("click", e => {
   const q = e.target.closest("[data-hquick]"); if (q && isMe()) { quickJr(q.dataset.jid, q.dataset.hquick); render(); return; }
   const l = e.target.closest("[data-launch-h]"); if (l && isMe()) { quickSerie(+l.dataset.launchH); return; }
 });
+["petFrom", "petTo"].forEach(k => { const v = lsGet(k); if (v) $("#" + k).value = v; $("#" + k).addEventListener("input", e => { lsSet(k, e.target.value); renderPet(); }); });
+$("#pq").addEventListener("input", e => petSearch(e.target.value));
+$("#pq").addEventListener("keydown", e => { if (e.key === "Enter" && phits.length) { e.preventDefault(); petAdd(phits[phl][0]); } if (e.key === "Escape") $("#pqres").hidden = true; });
+$("#pqres").addEventListener("mousedown", e => { const li = e.target.closest("[data-padd]"); if (li) { e.preventDefault(); petAdd(li.dataset.padd); } });
+$("#pq").addEventListener("blur", () => setTimeout(() => $("#pqres").hidden = true, 120));
+$("#pet").addEventListener("click", e => { const d = e.target.closest("[data-pldel]"); if (!d || !isMe()) return; S.pl = S.pl.filter(x => String(x) !== d.dataset.pldel); pendingPrix.add("pl:"); Store.savePrix(); render(); });
 $("#planAll").addEventListener("change", e => { lsSet("planAll", e.target.checked ? "1" : ""); renderCrafts(); applyRO(); });
 ["budget", "maxq", "dropPct"].forEach(k => { const v = lsGet(k); if (v) $("#" + k).value = v; });
 if (lsGet("planAll")) $("#planAll").checked = true;

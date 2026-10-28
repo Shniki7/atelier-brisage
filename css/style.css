@@ -466,6 +466,17 @@ button.ghost:disabled:hover{background:transparent}
 .stepno{font-style:normal;font-family:var(--mono);font-size:10.5px;color:var(--side-muted);border:1px solid var(--side-line);border-radius:4px;padding:0 4px;margin-right:7px}
 .nav button[aria-selected="true"] .stepno{color:var(--side-fg)}
 
+/* ---------- Familiers ---------- */
+.pet-goal{align-items:stretch}
+.pet-goal .field{width:130px;justify-content:end}
+.pet-goal .tot{min-width:180px}
+.pet-goal .tot b{font-size:20px}
+.t-pet{min-width:760px}
+.t-pet tr.is-best td{background:var(--good-soft)}
+.t-pet input{width:110px}
+.tag-g{font-size:10.5px;font-weight:600;color:var(--muted);background:var(--surface-2);border:1px dashed var(--line-2);border-radius:4px;padding:0 5px}
+.tips{margin:0;padding-left:1.1em;display:grid;gap:8px;font-size:13.5px;color:var(--fg-2)}
+
 /* ---------- lecture seule ---------- */
 body.ro .own-only{display:none!important}
 

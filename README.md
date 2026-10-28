@@ -8,6 +8,7 @@ Outil de rentabilité du craft et du brisage pour **Dofus 3**, à partager entre
 - **Prix du marché** : tous tes prix au même endroit (ressources, runes, items), avec les prix proposés par ton groupe.
 - **Mes séries** : chaque série, de l'achat à la vente, avec un bouton par étape (Brisé, Vendu).
 - **Tableau de bord** : bénéfice par jour, semaine, mois ou année, rendement réel par item, calendrier d'activité et alertes.
+- **Familiers** : XP à donner selon la courbe officielle, et la ressource la moins chère pour 1 000 XP (XP par ressource partagées dans le groupe).
 - **Le groupe** : chacun a son profil et voit les bilans et le journal des autres, en lecture seule.
 
 Le site est hébergé gratuitement sur **GitHub Pages**. Les données (profils, prix, journaux) sont stockées dans **Firebase**, gratuit pour un groupe d'amis.
