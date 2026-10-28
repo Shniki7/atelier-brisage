@@ -311,7 +311,7 @@ function renderCrafts() {
       let html = `<tr class="item ${isOpen ? "open" : ""}" data-id="${r.s.id}">
         <td class="l"><div class="iname"><span class="chev">›</span><span>${esc(nm)}<small>${r.it ? `Niv. ${r.it.l} · ${esc(D.types[r.it.t] || "")} · ${esc(r.it.j)}` : ""}${r.s.r ? " · recette modifiée" : ""}</small></span></div></td>
         <td class="m">${r.miss ? (r.cost ? `<span class="neg" title="Coût partiel : prix manquants">≥ ${fmt(r.cost)}</span>` : `<span class="note">–</span>`) : fmt(r.cost)}</td>
-        <td><input class="num coef-in" id="coef-${r.s.id}" data-coef="${r.s.id}" data-col="coef" type="number" min="1" max="4000" value="${r.s.coef ?? 100}" aria-label="Coefficient de brisage de ${esc(nm)} en %"></td>
+        <td><input class="num coef-in" id="coef-${r.s.id}" data-coef="${r.s.id}" data-col="coef" type="number" min="0" max="4000" value="${r.s.coef ?? 100}" aria-label="Coefficient de brisage de ${esc(nm)} en %"></td>
         <td><input class="num brk-in" id="brk-${r.s.id}" data-brk="${r.s.id}" data-col="brk" type="number" min="0" value="${r.s.brk || ""}" placeholder="${ph}" aria-label="Valeur de brisage de ${esc(nm)}" title="${r.src === "estimé" ? "Estimé à partir des prix des runes. Saisis une valeur pour la remplacer." : r.src === "manuel" ? "Valeur saisie à la main. Efface-la pour revenir à l'estimation." : "Renseigne les prix des runes ou saisis une valeur."}">
           <small class="note src">${r.src ? r.src + (tx ? ` · net ${fmt(r.brk)}` : "") : ""}</small></td>
         <td class="m ${r.benef < 0 ? "neg" : r.benef > 0 ? "pos" : ""}">${r.ok ? fmt(r.benef) : "–"}</td>
@@ -686,7 +686,7 @@ document.addEventListener("input", e => {
   if (t.dataset.price) { setPrice(t.dataset.price, t.value); t.classList.toggle("miss", !(+t.value > 0)); if (tab === "crafts") softCrafts(); return; }
   if (t.dataset.runep) { setRuneP(t.dataset.runep, t.value); t.classList.toggle("miss", !(+t.value > 0)); if (tab === "crafts") softCrafts(); return; }
   if (t.dataset.runepts) { setRunePts(t.dataset.runepts, t.value); return; }
-  if (t.dataset.coef) { const s = S.suivi.find(x => x.id === +t.dataset.coef); s.coef = Math.max(1, +t.value || 100); saveSuiviLater(); softCrafts(); return; }
+  if (t.dataset.coef) { const s = S.suivi.find(x => x.id === +t.dataset.coef); s.coef = t.value === "" ? 100 : Math.min(4000, Math.max(0, +t.value || 0)); saveSuiviLater(); softCrafts(); return; }
   if (t.id === "cfgTaxe") { setCfg("taxe", Math.min(50, Math.max(0, +t.value || 0))); return; }
   if (t.dataset.brk) { const s = S.suivi.find(x => x.id === +t.dataset.brk); s.brk = +t.value || 0; saveSuiviLater(); softCrafts(); return; }
   if (t.dataset.rq) { const s = S.suivi.find(x => x.id === +t.dataset.rq); if (!s.r) s.r = recipeOf(s).map(([i, q]) => ({ i, q })); s.r[+t.dataset.k].q = Math.max(1, +t.value || 1); saveSuiviLater(); softCrafts(); return; }
