@@ -146,6 +146,10 @@
         </div>
         <div class="panel">
           <div class="panel-head"><h2>Que donner à manger ?</h2>
+            <div class="row" style="gap:8px;align-items:center">
+            <label class="chk"><input type="checkbox" id="petAll" class="keep"><span>Toute la table (<span id="petAllN">0</span>)</span></label>
+            <button type="button" class="own-only" id="btnXpImport">Coller une table d'XP</button>
+            </div>
             <div class="search own-only"><input id="pq" type="search" placeholder="Ajouter une ressource" autocomplete="off" aria-label="Ajouter une ressource au tableau"><ul class="results" id="pqres" hidden></ul></div>
           </div>
           <div class="tbl-wrap">
@@ -154,12 +158,12 @@
               <tbody id="pet" data-freeze="pet"></tbody>
             </table>
           </div>
-          <p class="note">Classé du moins cher au plus cher pour 1 000 XP. Les XP marquées <span class="tag-g">guide</span> viennent de guides communautaires et sont à vérifier ; celles marquées <span class="grp-tag">groupe</span> ont été saisies par tes copains. Pour connaître l'XP exacte, glisse la ressource dans la fenêtre « Nourrir » du jeu : il affiche l'XP gagnée. Les prix sont les mêmes que dans Prix du marché.</p>
+          <p class="note">Classé du moins cher au plus cher pour 1 000 XP. Les XP marquées <span class="tag-w">table</span> viennent d'une table importée (source au survol), <span class="tag-g">guide</span> d'une valeur sûre (croquette) ; celles marquées <span class="grp-tag">groupe</span> ont été saisies par tes copains. Pour connaître l'XP exacte, glisse la ressource dans la fenêtre « Nourrir » du jeu : il affiche l'XP gagnée. Les prix sont les mêmes que dans Prix du marché.</p>
         </div>
         <div class="panel">
           <div class="panel-head"><h2>Astuces</h2></div>
           <ul class="tips">
-            <li><b>Nourris avec les pépites directement.</b> Une pépite donne environ 1,25 XP, alors qu'une croquette (500 XP) coûte 500 pépites au Temple des alliances : 1 XP par pépite.</li>
+            <li><b>Pépites : compare avant d'échanger.</b> Une croquette (500 XP) coûte 500 pépites au Temple des alliances, soit 1 XP par pépite. Si la table indique plus d'1 XP pour une pépite donnée directement, nourris avec les pépites.</li>
             <li><b>Nourris par gros lots ronds.</b> Le jeu arrondit l'XP à l'entier inférieur sur le lot entier : donner 100 unités d'un coup peut rapporter plus que 99 puis 101.</li>
             <li><b>Compare avec un familier déjà monté.</b> Si le même familier niveau 100 coûte moins que le coût de l'objectif ci-dessus, achète-le tout fait.</li>
           </ul>
@@ -413,6 +417,21 @@
       <div class="field"><label for="lCost">Coût total réel (corrige si tu as payé autre chose)</label><input id="lCost" class="num" type="number" min="0"></div>
       <div class="l-actions"><button type="button" class="ghost" data-close>Annuler</button><button class="primary" type="submit">C'est parti</button></div>
     </form>
+  </div>
+</div>
+
+<div class="modal" id="xpPanel" hidden>
+  <div class="modal-card wide" role="dialog" aria-modal="true" aria-labelledby="xpT">
+    <div class="panel-head"><h2 id="xpT">Coller une table d'XP familier</h2><button class="ghost x" type="button" data-close aria-label="Fermer">×</button></div>
+    <ol class="steps">
+      <li>Ouvre <b>dofuswiki.fandom.com/wiki/Pet_experience_table</b> (ou une autre table) dans ton navigateur.</li>
+      <li>Sélectionne tout le tableau avec la souris, copie-le (Ctrl+C) et colle-le ci-dessous (Ctrl+V).</li>
+      <li>Clique « Importer ». Les noms français ou anglais sont reconnus ; la table est partagée avec ton groupe.</li>
+    </ol>
+    <textarea id="xpText" rows="10" placeholder="Nom de la ressource    XP par unité&#10;Cuir synthétique    1000&#10;Pétale d'encre    205,0056"></textarea>
+    <div class="field" style="max-width:360px"><label for="xpSrc">Source (affichée dans le tableau)</label><input id="xpSrc" value="Dofus Wiki, Pet experience table (CC BY-SA)"></div>
+    <p class="note" id="xpReport"></p>
+    <div class="l-actions"><button type="button" class="ghost" data-close>Fermer</button><button type="button" class="primary" id="xpDo">Importer</button></div>
   </div>
 </div>
 

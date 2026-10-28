@@ -10,6 +10,7 @@ import sqlite3, json, sys, datetime, re
 src, fx_src, dst = sys.argv[1], sys.argv[2], sys.argv[3]
 c = sqlite3.connect(src)
 T = dict(c.execute("select id,value from translations where lang='fr'").fetchall())
+TEN = dict(c.execute("select id,value from translations where lang='en'").fetchall())
 
 def nm(nid):
     try:
@@ -97,7 +98,7 @@ if len(items) < 2500 or incoherences > 50 or len(fx) < 2000:
     sys.exit(1)
 
 # ---- familiers : toutes les ressources (pour le tableau d'XP), courbe d'XP des familiers ----
-allres = {}
+allres, allres_en = {}, {}
 for iid, nid, tid, lvl in I.values():
     ty = Ty.get(tid)
     if not ty or ty[1] != 2:          # catégorie 2 = ressources
@@ -105,12 +106,17 @@ for iid, nid, tid, lvl in I.values():
     n = nm(nid)
     if n and not n.startswith('Cadeau'):
         allres[str(iid)] = n
+        try:
+            en = TEN.get(int(nid))
+        except (TypeError, ValueError):
+            en = None
+        if en:
+            allres_en[str(iid)] = en
 curve = c.execute("select experienceByLevel from EvolutiveItemTypeData where id=1").fetchone()
 petcurve = json.loads(curve[0]) if curve else []
 # XP par unité relevées dans des guides communautaires (à confirmer en jeu)
-GUIDE_XP = {'Croquette enrichie': 500, 'Pépite': 1.25, 'Eau calme': 0.5, 'Pierre de Granit': 0.8,
-            'Peau de Don Duss Ang': 0.8, 'Peau de Don Dorgan': 0.9, 'Cuir de Porsalu': 0.9,
-            'Rune Ré Pa': 3, 'Essence du Capitaine Ekarlatte': 135}
+# (les anciennes valeurs des guides Dofus 2 sont dépassées : on ne garde que la croquette, sûre)
+GUIDE_XP = {'Croquette enrichie': 500}
 by_name = {v: k for k, v in allres.items()}
 petxp = {by_name[n]: x for n, x in GUIDE_XP.items() if n in by_name}
 print(f"ressources={len(allres)} courbe={len(petcurve)} xp_guides={len(petxp)}")
@@ -123,6 +129,7 @@ d = {
     'fx': fx,
     'stats': stats,
     'allres': allres,
+    'allres_en': allres_en,
     'petcurve': petcurve,
     'petxp': petxp,
 }

@@ -31,7 +31,7 @@ let gran = lsGet("gran") || "semaine", ggran = lsGet("ggran") || "semaine", demo
 const pendingPrix = new Set();
 const pendingJ = new Map();                 // saisies du journal pas encore confirmées par le serveur : id -> {champ: valeur}
 
-function blank() { return { p: {}, prix: {}, maj: {}, rp: {}, rm: {}, rpt: {}, rec: {}, xp: {}, pl: [], cfg: { taxe: 2, recolte: "hdv" }, suivi: [], journal: [], loaded: false }; }
+function blank() { return { p: {}, prix: {}, maj: {}, rp: {}, rm: {}, rpt: {}, rec: {}, xp: {}, xw: {}, xws: "", pl: [], cfg: { taxe: 2, recolte: "hdv" }, suivi: [], journal: [], loaded: false }; }
 function member(uid) { if (!MEMBERS.has(uid)) MEMBERS.set(uid, blank()); return MEMBERS.get(uid); }
 const isMe = () => VIEW === ME;
 const ro = () => !isMe();
@@ -207,11 +207,12 @@ function subscribeMember(uid) {
   const base = db.doc(`profiles/${uid}`);
   unsubs.push(base.collection("data").doc("prix").onSnapshot(snap => {
     const d = snap.data() || {};
-    const nx = { prix: { ...(d.p || {}) }, maj: { ...(d.m || {}) }, rp: { ...(d.rp || {}) }, rm: { ...(d.rm || {}) }, rpt: { ...(d.rpt || {}) }, rec: { ...(d.r || {}) }, xp: { ...(d.xp || {}) }, pl: [...(d.pl || [])], cfg: { taxe: 2, recolte: "hdv", ...(d.cfg || {}) } };
+    const nx = { prix: { ...(d.p || {}) }, maj: { ...(d.m || {}) }, rp: { ...(d.rp || {}) }, rm: { ...(d.rm || {}) }, rpt: { ...(d.rpt || {}) }, rec: { ...(d.r || {}) }, xp: { ...(d.xp || {}) }, xw: { ...(d.xw || {}) }, xws: d.xws || "", pl: [...(d.pl || [])], cfg: { taxe: 2, recolte: "hdv", ...(d.cfg || {}) } };
     if (uid === ME) for (const k of pendingPrix) {           // garder les saisies pas encore enregistrées
       const [f, id] = k.split(":");
       if (f === "cfg") { nx.cfg = { ...m.cfg }; continue; }
       if (f === "pl") { nx.pl = [...m.pl]; continue; }
+      if (f === "xw") { nx.xw = { ...m.xw }; nx.xws = m.xws; continue; }
       const date = f === "prix" ? "maj" : f === "rp" ? "rm" : null;
       if (m[f][id] != null && m[f][id] !== false && m[f][id] !== 0) nx[f][id] = m[f][id]; else delete nx[f][id];
       if (date) nx[date][id] = m[date][id];
@@ -242,7 +243,7 @@ function showError(msg) {
   b.querySelector("button").onclick = () => b.remove();
 }
 const Store = {
-  savePrix() { if (!isMe()) return; pendingPrix.clear(); db.doc(`profiles/${ME}/data/prix`).set({ p: { ...S.prix }, m: { ...S.maj }, rp: { ...S.rp }, rm: { ...S.rm }, rpt: { ...S.rpt }, r: { ...S.rec }, xp: { ...S.xp }, pl: [...S.pl], cfg: { ...S.cfg } }).catch(fail); },
+  savePrix() { if (!isMe()) return; pendingPrix.clear(); db.doc(`profiles/${ME}/data/prix`).set({ p: { ...S.prix }, m: { ...S.maj }, rp: { ...S.rp }, rm: { ...S.rm }, rpt: { ...S.rpt }, r: { ...S.rec }, xp: { ...S.xp }, xw: { ...S.xw }, xws: S.xws || "", pl: [...S.pl], cfg: { ...S.cfg } }).catch(fail); },
   saveSuivi() { if (!isMe()) return; timers.suivi = null; db.doc(`profiles/${ME}/data/suivi`).set({ items: S.suivi.map(x => ({ ...x })) }).catch(fail); },
   addJr(e) { if (!isMe()) return; db.collection(`profiles/${ME}/journal`).add(e).catch(fail); },
   updJr(id, patch) {
@@ -263,6 +264,7 @@ function loadRecipes() {
   fetch("data/recettes.json").then(r => r.json()).then(d => {
     d.items = d.items.map(([id, n, l, t, j, ing]) => ({ id, n, l, t, j, ing, nn: norm(n) }));
     D = d; d.items.forEach(it => ITEMS.set(it.id, it));
+    fetch("data/xp-table.json").then(r => r.json()).then(x => { D.xptable = x; if (tab === "pet") render(); }).catch(() => { });
     afterLoad();
   }).catch(() => { $("#loading").textContent = "Impossible de charger data/recettes.json. Ouvre l'outil depuis GitHub Pages ou un petit serveur local (voir le README)."; });
 }
@@ -587,11 +589,17 @@ function xpInfo(id, M = S) {
   const v = +M.xp?.[id]; if (v > 0) return { v, src: "moi" };
   const vals = []; for (const [, m] of MEMBERS) { if (m === M) continue; const x = +m.xp?.[id]; if (x > 0) vals.push(x); }
   if (vals.length) return { v: median(vals), src: "groupe", n: vals.length };
+  const tables = [M, ...[...MEMBERS.values()].filter(m => m !== M)];
+  for (const m of tables) { const w = +m.xw?.[id]; if (w > 0) return { v: w, src: "table", from: m.xws || "table importée" }; }
+  const tw = +D.xptable?.xp?.[id]; if (tw > 0) return { v: tw, src: "table", from: D.xptable.src };
   const g = +D.petxp?.[id]; return g > 0 ? { v: g, src: "guide" } : { v: null, src: null };
 }
 function petIds() {
   const ids = new Set([...Object.keys(D.petxp || {}), ...Object.keys(S.xp || {}), ...(S.pl || []).map(String)]);
-  for (const [, m] of MEMBERS) for (const k of Object.keys(m.xp || {})) ids.add(k);
+  const table = new Set(Object.keys(D.xptable?.xp || {})); for (const [, m] of MEMBERS) { for (const k of Object.keys(m.xp || {})) ids.add(k); for (const k of Object.keys(m.xw || {})) table.add(k); }
+  $("#petAllN").textContent = table.size;
+  // par défaut : seulement les ressources dont on connaît le prix (sinon la table importée noierait tout)
+  for (const k of table) if ($("#petAll").checked || priceInfo(k).v != null) ids.add(k);
   return [...ids];
 }
 function renderPet() {
@@ -602,7 +610,7 @@ function renderPet() {
     r => r.id, (a, b) => (a.per ?? 1e18) - (b.per ?? 1e18) || resName(a.id).localeCompare(resName(b.id), "fr"));
   const best = rows.find(r => r.per != null);
   $("#petBest").innerHTML = best ? `${esc(resName(best.id))}<small class="note" style="display:block;font-family:var(--body);font-size:12px">${fmt(best.per * need / 1000)} kamas</small>` : "–";
-  const tagOf = x => x.src === "groupe" ? `<span class="grp-tag" title="Médiane de ${x.n} membre(s)">groupe</span>` : x.src === "guide" ? `<span class="tag-g" title="Valeur relevée dans un guide, à vérifier">guide</span>` : "";
+  const tagOf = x => x.src === "groupe" ? `<span class="grp-tag" title="Médiane de ${x.n} membre(s)">groupe</span>` : x.src === "table" ? `<span class="tag-w" title="Source : ${esc(x.from)}">table</span>` : x.src === "guide" ? `<span class="tag-g" title="Valeur sûre">guide</span>` : "";
   keepFocus(() => {
     $("#pet").innerHTML = rows.length ? rows.map(r => { const own = S.xp[r.id], p = S.prix[r.id]; return `<tr class="${best && r.id === best.id ? "is-best" : ""}">
       <td class="l"><b>${best && r.id === best.id ? "★ " : ""}${esc(resName(r.id))}</b> ${tagOf(r.xi)}</td>
@@ -1200,6 +1208,45 @@ $("#pq").addEventListener("keydown", e => { if (e.key === "Enter" && phits.lengt
 $("#pqres").addEventListener("mousedown", e => { const li = e.target.closest("[data-padd]"); if (li) { e.preventDefault(); petAdd(li.dataset.padd); } });
 $("#pq").addEventListener("blur", () => setTimeout(() => $("#pqres").hidden = true, 120));
 $("#pet").addEventListener("click", e => { const d = e.target.closest("[data-pldel]"); if (!d || !isMe()) return; S.pl = S.pl.filter(x => String(x) !== d.dataset.pldel); pendingPrix.add("pl:"); Store.savePrix(); render(); });
+// ----- import d'une table d'XP collée (wiki, tableur…) : « nom  nombre » par ligne
+function parseXpTable(txt) {
+  const fr = new Map(), en = new Map();
+  for (const [id, n] of Object.entries(D.allres || {})) fr.set(norm(n).replace(/\s+/g, " "), id);
+  for (const [id, n] of Object.entries(D.allres_en || {})) en.set(norm(n).replace(/\s+/g, " "), id);
+  const idOf = t => { const k = norm(String(t)).replace(/\s+/g, " ").trim(); return fr.get(k) || en.get(k); };
+  const numOf = t => { let x = String(t).replace(/ |\s|xp/gi, ""); if (!/^-?\d[\d.,]*$/.test(x)) return null; if (/,\d+$/.test(x) && !/\.\d+$/.test(x)) x = x.replace(/\./g, "").replace(",", "."); else x = x.replace(/,/g, ""); const v = parseFloat(x); return isFinite(v) ? v : null; };
+  const ok = {}, miss = []; let xpCol = -1;
+  for (const raw of txt.split(/\r?\n/)) {
+    const line = raw.replace(/ /g, " ").trim(); if (!line) continue;
+    let cells = line.includes("\t") ? line.split("\t") : /[;|]/.test(line) ? line.split(/[;|]/) : line.split(/\s{2,}/);
+    cells = cells.map(c => c.trim());
+    // ligne d'en-tête : repérer la colonne de l'XP
+    const h = cells.findIndex(c => /^(xp|exp|experience|expérience)\b/i.test(c) || /\bxp\b/i.test(c));
+    if (h >= 0 && !cells.some(c => idOf(c))) { xpCol = h; continue; }
+    let id = null, ni = -1;
+    for (let i = 0; i < cells.length && !id; i++) { const x = idOf(cells[i]); if (x) { id = x; ni = i; } }
+    let v = null;
+    if (id) {
+      if (xpCol >= 0 && cells.length > xpCol) v = numOf(cells[xpCol]);
+      if (v == null) for (let i = cells.length - 1; i > ni; i--) { const x = numOf(cells[i]); if (x != null) { v = x; break; } }
+    } else if (cells.length === 1) {
+      const m = line.match(/^(.*\S)\s+(-?\d[\d\s.,]*)\s*(xp)?$/i);
+      if (m) { id = idOf(m[1]); v = numOf(m[2]); if (!id) { miss.push(m[1]); continue; } }
+    } else { const nm0 = cells.find(c => c && numOf(c) == null); if (nm0 && cells.some(c => numOf(c) != null)) miss.push(nm0); continue; }
+    if (id && v > 0) ok[id] = v;
+  }
+  return { ok, miss };
+}
+$("#btnXpImport").addEventListener("click", () => { $("#xpReport").textContent = ""; $("#xpPanel").hidden = false; $("#xpText").focus(); });
+$("#xpPanel").addEventListener("click", e => { if (e.target.id === "xpPanel" || e.target.closest("[data-close]")) $("#xpPanel").hidden = true; });
+$("#xpDo").addEventListener("click", () => {
+  if (!isMe()) return; const { ok, miss } = parseXpTable($("#xpText").value); const n = Object.keys(ok).length;
+  if (!n) { $("#xpReport").innerHTML = `<span class="neg">Aucune ligne reconnue.</span> Chaque ligne doit contenir le nom d'une ressource puis son XP.`; return; }
+  S.xw = { ...S.xw, ...ok }; S.xws = $("#xpSrc").value.trim().slice(0, 120); pendingPrix.add("xw:"); Store.savePrix(); render();
+  $("#xpReport").innerHTML = `<b class="pos">${n} ressource${n > 1 ? "s" : ""} importée${n > 1 ? "s" : ""}.</b>${miss.length ? ` ${miss.length} ligne(s) non reconnue(s) : ${esc(miss.slice(0, 8).join(", "))}${miss.length > 8 ? "…" : ""}` : ""}`;
+  toast(`${n} XP importées dans la table des familiers`);
+});
+$("#petAll").addEventListener("change", () => renderPet());
 $("#planAll").addEventListener("change", e => { lsSet("planAll", e.target.checked ? "1" : ""); renderCrafts(); applyRO(); });
 ["budget", "maxq", "dropPct"].forEach(k => { const v = lsGet(k); if (v) $("#" + k).value = v; });
 if (lsGet("planAll")) $("#planAll").checked = true;
@@ -1230,7 +1277,7 @@ function applyTheme() {
 $("#btnTheme").addEventListener("click", () => { theme = THEMES[(THEMES.indexOf(theme) + 1) % 3]; lsSet("theme", theme); applyTheme(); toast("Thème : " + THEME_LAB[theme].toLowerCase()); });
 $("#themeLab").textContent = THEME_LAB[theme];
 $("#dataPanel").addEventListener("click", e => { if (e.target.id === "dataPanel") $("#dataPanel").hidden = true; });
-document.addEventListener("keydown", e => { if (e.key === "Escape") { $("#dataPanel").hidden = true; $("#launchPanel").hidden = true; } });
+document.addEventListener("keydown", e => { if (e.key === "Escape") { $("#dataPanel").hidden = true; $("#launchPanel").hidden = true; $("#xpPanel").hidden = true; } });
 $("#btnStarter").addEventListener("click", async () => {
   try { const d = await (await fetch("data/depart-tanguy.json")).json(); await importData(d); $("#dataPanel").hidden = true; }
   catch (x) { console.error(x); toast("Impossible de charger les items de départ"); }

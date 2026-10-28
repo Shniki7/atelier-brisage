@@ -477,6 +477,10 @@ button.ghost:disabled:hover{background:transparent}
 .tag-g{font-size:10.5px;font-weight:600;color:var(--muted);background:var(--surface-2);border:1px dashed var(--line-2);border-radius:4px;padding:0 5px}
 .tips{margin:0;padding-left:1.1em;display:grid;gap:8px;font-size:13.5px;color:var(--fg-2)}
 
+.tag-w{font-size:10.5px;font-weight:600;color:var(--kama);background:var(--kama-soft);border-radius:4px;padding:0 5px;cursor:help}
+.modal-card.wide{max-width:720px}
+#xpText{width:100%;font-family:var(--mono);font-size:12.5px;background:var(--surface-2);color:var(--fg);border:1px solid var(--line-2);border-radius:8px;padding:10px;resize:vertical}
+
 /* ---------- lecture seule ---------- */
 body.ro .own-only{display:none!important}
 
