@@ -84,9 +84,9 @@
       <nav class="nav" role="tablist" aria-label="Sections">
         <button role="tab" aria-selected="true" data-tab="dash"><svg class="i"><use href="#i-dash"/></svg><span class="lab">Tableau de bord</span></button>
         <button role="tab" aria-selected="false" data-tab="grp"><svg class="i"><use href="#i-grp"/></svg><span class="lab">Le groupe</span><span class="count" id="cGrp">0</span></button>
-        <button role="tab" aria-selected="false" data-tab="crafts"><svg class="i"><use href="#i-craft"/></svg><span class="lab">Crafts suivis</span><span class="count" id="cCrafts">0</span></button>
-        <button role="tab" aria-selected="false" data-tab="res"><svg class="i"><use href="#i-res"/></svg><span class="lab">Ressources</span><span class="count" id="cRes">0</span></button>
-        <button role="tab" aria-selected="false" data-tab="jr"><svg class="i"><use href="#i-jr"/></svg><span class="lab">Journal</span><span class="count" id="cJr">0</span></button>
+        <button role="tab" aria-selected="false" data-tab="crafts"><svg class="i"><use href="#i-craft"/></svg><span class="lab">Opportunités</span><span class="count" id="cCrafts">0</span></button>
+        <button role="tab" aria-selected="false" data-tab="res"><svg class="i"><use href="#i-res"/></svg><span class="lab">Prix du marché</span><span class="count" id="cRes">0</span></button>
+        <button role="tab" aria-selected="false" data-tab="jr"><svg class="i"><use href="#i-jr"/></svg><span class="lab">Mes séries</span><span class="count" id="cJr">0</span></button>
       </nav>
     </div>
     <div class="grp-block">
@@ -188,64 +188,77 @@
         </div>
       </section>
 
-      <!-- CRAFTS SUIVIS -->
-      <section id="v-crafts" hidden>
-        <div class="grid">
-          <div class="panel">
-            <div class="panel-head">
-              <h2>Items suivis</h2>
-              <div class="search own-only">
-                <input id="q" type="search" placeholder="Ajouter un item, ex. Bottes de Rapiat" autocomplete="off" aria-label="Chercher un item à ajouter">
-                <ul class="results" id="qres" hidden></ul>
-              </div>
-            </div>
-            <div class="tbl-wrap">
-              <table class="t-crafts">
-                <thead><tr><th class="l">Item</th><th title="Coût de la recette avec tes prix de ressources">Craft</th><th title="Prix pour acheter l'item tout fait">Achat</th><th title="Prix de vente de l'item à l'HDV">Revente HDV</th><th title="Valeur des runes, estimée ou saisie">Brisage</th><th class="l">Meilleure option</th><th></th></tr></thead>
-                <tbody id="crafts" data-freeze="crafts"></tbody>
-              </table>
-            </div>
-            <p class="note">Pour chaque item, l'outil compare 4 options : <b>crafter ou acheter</b> l'item, puis le <b>briser ou le revendre</b> à l'HDV. Renseigne le prix d'achat et le prix de revente quand tu les connais : la meilleure option s'affiche à droite. Clique sur un item pour voir le détail des 4 options, sa recette et les runes qu'il donne. Le brisage est estimé à partir du prix des runes et du coefficient. Saisis une valeur pour le remplacer, efface-la pour revenir à l'estimation. Les cases orange sont des prix à renseigner.</p>
+      <!-- OPPORTUNITÉS -->
+      <section id="v-crafts" class="stack" hidden>
+        <div class="panel plan">
+          <div class="panel-head"><h2>Que faire avec mon budget ?</h2><span class="sub">La combinaison qui rapporte le plus</span></div>
+          <div class="plan-ctl">
+            <div class="field"><label for="budget">Budget (kamas)</label><input id="budget" class="num keep" type="number" min="0" step="100000" value="10000000"></div>
+            <div class="field"><label for="maxq">Max par item</label><input id="maxq" class="num keep" type="number" min="1" max="50" step="1" value="5"></div>
+            <div class="field adv"><label for="dropPct" title="De combien baisse la valeur à chaque exemplaire supplémentaire du même item">Baisse par exemplaire %</label><input id="dropPct" class="num keep" type="number" min="0" max="50" step="0.5" value="0"></div>
+            <label class="chk"><input type="checkbox" id="planAll" class="keep"><span>Chercher aussi parmi tous les items dont je connais les prix</span></label>
+            <label class="chk"><input type="checkbox" id="advToggle"><span>Options avancées</span></label>
           </div>
-          <aside class="panel plan">
-            <div class="panel-head"><h2>Plan optimal</h2><span class="sub">Le plus gros bénéfice pour ton budget</span></div>
-            <div class="row">
-              <div class="field" style="flex:1;min-width:150px"><label for="budget">Budget (kamas)</label><input id="budget" class="num keep" type="number" min="0" step="100000" value="10000000"></div>
-              <div class="field" style="width:96px"><label for="maxq">Max / item</label><input id="maxq" class="num keep" type="number" min="1" max="50" step="1" value="5"></div>
-              <div class="field" style="width:128px"><label for="dropPct" title="De combien baisse la valeur du brisage à chaque exemplaire supplémentaire du même item">Baisse / brisage %</label><input id="dropPct" class="num keep" type="number" min="0" max="50" step="0.5" value="0"></div>
-            </div>
-            <label class="chk"><input type="checkbox" id="planAll" class="keep"><span>Inclure tous les items dont je connais les prix (pas seulement mes crafts suivis)</span></label>
-            <ul class="plan-list" id="plan"></ul>
-            <p class="hint" id="planGain" hidden></p>
-            <div class="totals">
-              <div class="tot"><span>Investi</span><b id="tInv">0</b></div>
-              <div class="tot big"><span>Bénéfice</span><b id="tBen">0</b></div>
+          <div class="plan-body">
+            <div class="tbl-wrap"><table class="t-plan"><thead><tr><th class="l">À faire</th><th class="l">Comment</th><th>Qté</th><th>Investir</th><th>Bénéfice</th><th></th></tr></thead><tbody id="plan"></tbody></table></div>
+            <div class="plan-sum">
+              <div class="tot big"><span>Bénéfice attendu</span><b id="tBen">0</b></div>
+              <div class="tot"><span>À investir</span><b id="tInv">0</b></div>
               <div class="tot"><span>Rendement</span><b id="tRoi">–</b></div>
-              <div class="tot"><span>Reste</span><b id="tLeft">0</b></div>
+              <div class="tot"><span>Reste du budget</span><b id="tLeft">0</b></div>
             </div>
-            <p class="note" id="planInfo"></p>
-            <details><summary>Comment le plan est calculé</summary>
-              <p class="note" style="margin-top:8px">L'outil teste les combinaisons possibles et garde celle qui rapporte le plus au total sans dépasser ton budget. Ce n'est pas forcément les items au meilleur rendement : un item un peu moins rentable peut mieux remplir le budget. « Max / item » limite le nombre d'exemplaires d'un même item. « Baisse / brisage » simule la chute du coefficient : à 5 %, le 2<sup>e</sup> exemplaire rapporte 5 % de moins que le 1<sup>er</sup>, le 3<sup>e</sup> encore 5 % de moins, etc.</p>
-            </details>
-          </aside>
+          </div>
+          <p class="hint" id="planGain" hidden></p>
+          <p class="note" id="planInfo"></p>
+        </div>
+
+        <div class="panel">
+          <div class="panel-head">
+            <h2>Mes items</h2>
+            <select id="oppSort" class="keep" aria-label="Trier"><option value="benef">Trier par bénéfice</option><option value="roi">Trier par rendement</option></select>
+            <div class="search own-only">
+              <input id="q" type="search" placeholder="Suivre un item, ex. Bottes de Rapiat" autocomplete="off" aria-label="Chercher un item à suivre">
+              <ul class="results" id="qres" hidden></ul>
+            </div>
+          </div>
+          <div class="tbl-wrap">
+            <table class="t-opp">
+              <thead><tr><th class="l">Item</th><th class="l">Meilleur choix</th><th>Tu paies</th><th>Tu récupères</th><th>Bénéfice</th><th>Rendement</th><th class="l" title="Fiabilité de l'estimation">Fiabilité</th><th></th></tr></thead>
+              <tbody id="crafts" data-freeze="crafts"></tbody>
+            </table>
+          </div>
+          <p class="note"><b>Fiabilité</b> : <span class="dots d3">●●●</span> tes prix, récents · <span class="dots d2">●●○</span> prix du groupe, prix de plus de 7 jours ou brisage estimé · <span class="dots d1">●○○</span> plusieurs de ces points ou prix de plus de 14 jours. Les prix se saisissent dans <b>Prix du marché</b>.</p>
         </div>
       </section>
 
-      <!-- RESSOURCES -->
+      <!-- PRIX DU MARCHÉ -->
       <section id="v-res" class="stack" hidden>
-        <div class="panel">
-          <div class="panel-head"><h2>Réglages de calcul</h2><input id="rq" class="keep" type="search" placeholder="Filtrer runes et ressources" aria-label="Filtrer les runes et les ressources" style="max-width:280px;width:100%"></div>
-          <div class="row">
-            <div class="field" style="width:150px"><label for="cfgTaxe">Taxe HDV (%)</label><input id="cfgTaxe" class="num" type="number" min="0" max="50" step="0.5" value="2"></div>
-            <div class="field" style="min-width:260px"><label for="cfgRecolte">Ressources que je récolte</label>
-              <select id="cfgRecolte"><option value="hdv">Comptées au prix HDV (ce que tu pourrais les vendre)</option><option value="gratuit">Comptées gratuites</option></select></div>
+        <div class="dash-bar">
+          <div class="seg" role="group" aria-label="Type de prix">
+            <button type="button" data-mk="res" aria-pressed="true">Ressources <span class="miss-n" id="mkNres"></span></button>
+            <button type="button" data-mk="runes" aria-pressed="false">Runes <span class="miss-n" id="mkNrunes"></span></button>
+            <button type="button" data-mk="items" aria-pressed="false">Items <span class="miss-n" id="mkNitems"></span></button>
           </div>
-          <p class="note">La taxe est retirée de la valeur des runes, que le brisage soit estimé ou saisi à la main, et du montant proposé quand tu marques une série « Vendu ». Vérifie le taux en jeu à l'hôtel des ventes.</p>
+          <div class="mk-filters">
+            <select id="mkItem" class="keep" aria-label="Limiter à un item"><option value="">Tous mes items</option></select>
+            <label class="chk"><input type="checkbox" id="mkMissing" class="keep"><span>Seulement les prix à compléter</span></label>
+            <input id="rq" class="keep" type="search" placeholder="Filtrer" aria-label="Filtrer par nom" style="width:180px">
+          </div>
         </div>
-        <div class="panel">
-          <div class="panel-head"><h2>Prix des runes <span class="count-chip" id="cRunes">0</span></h2><label class="chk"><input type="checkbox" id="advToggle"><span>Réglages avancés</span></label></div>
-          <p class="note"><b>Ce que tu récupères.</b> Quand tu brises un item, tu obtiens des runes. Indique ici ce que <b>tu vends une rune de base (Ba)</b> à l'HDV. L'outil s'en sert pour estimer combien rapporte le brisage de chaque item.</p>
-          <p class="note adv">Avancé : « Points / rune » = ce qu'apporte une rune de base (5 pour Vitalité). Le brisage estimé compte tout en runes de base : si tu revends surtout des Pa ou des Ra, mets leur prix divisé par 3 ou par 10.</p>
+
+        <div class="panel" id="mk-res">
+          <div class="panel-head"><h2>Ressources · ce que tu paies</h2><span class="sub">Un prix sert à tous les items qui utilisent la ressource</span></div>
+          <div class="tbl-wrap">
+            <table class="t-res">
+              <thead><tr><th class="l">Ressource</th><th class="l">Pour</th><th class="l">Récolte</th><th>Prix d'achat</th><th>Mis à jour</th></tr></thead>
+              <tbody id="res" data-freeze="res"></tbody>
+            </table>
+          </div>
+        </div>
+
+        <div class="panel" id="mk-runes" hidden>
+          <div class="panel-head"><h2>Runes <span class="count-chip" id="cRunes">0</span> · ce que tu récupères en brisant</h2><span class="sub">Prix de vente d'une rune de base (Ba)</span></div>
+          <p class="note adv">« Points / rune » = ce qu'apporte une rune de base (5 pour Vitalité). Le brisage estimé compte tout en runes de base : si tu revends surtout des Pa ou des Ra, mets leur prix divisé par 3 ou par 10.</p>
           <div class="tbl-wrap">
             <table class="t-res">
               <thead><tr><th class="l">Rune</th><th class="l">Donnée par</th><th class="adv">Points / rune</th><th>Prix de vente</th><th>Mis à jour</th></tr></thead>
@@ -253,50 +266,65 @@
             </table>
           </div>
         </div>
-        <div class="panel">
-          <div class="panel-head"><h2>Prix des ressources</h2></div>
-          <p class="note"><b>Ce que tu dépenses.</b> Indique ce que <b>tu paies chaque ressource</b> à l'HDV. Un prix saisi ici sert à tous les crafts qui utilisent cette ressource. Coche « récoltée » si tu la récoltes toi-même.</p>
+
+        <div class="panel" id="mk-items" hidden>
+          <div class="panel-head"><h2>Items · acheter tout fait, revendre, briser</h2><span class="sub">Laisse vide ce que tu ne connais pas</span></div>
           <div class="tbl-wrap">
-            <table class="t-res">
-              <thead><tr><th class="l">Ressource</th><th class="l">Utilisée dans</th><th class="l">Récolte</th><th>Prix d'achat</th><th>Mis à jour</th></tr></thead>
-              <tbody id="res" data-freeze="res"></tbody>
+            <table class="t-items">
+              <thead><tr><th class="l">Item</th><th title="Prix pour acheter l'item tout fait (à un joueur ou à l'HDV)">Prix d'achat</th><th title="Prix de vente de l'item à l'HDV">Prix de revente HDV</th><th title="Coefficient de brisage affiché en jeu, de 0 à 4000 %">Coef. brisage %</th><th title="Valeur des runes si tu la connais. Sinon, elle est estimée.">Valeur de brisage</th></tr></thead>
+              <tbody id="mkItems" data-freeze="items"></tbody>
             </table>
           </div>
-          <p class="note">Une case <b>grise en pointillés</b> affiche le prix proposé par le groupe : la médiane des prix saisis par les membres de ton serveur ces 14 derniers jours. Il est déjà utilisé dans les calculs ; tape ton propre prix pour le remplacer.</p>
-          <p class="note">Astuce : clique dans la première case de prix, tape le prix, puis <kbd>Tab</kbd> ou <kbd>Entrée</kbd> pour descendre à la ressource suivante.</p>
+        </div>
+
+        <p class="note"><kbd>Tab</kbd> ou <kbd>Entrée</kbd> descend à la case du dessous. Une case <b>grise en pointillés</b> affiche le prix proposé par ton groupe (médiane des membres de ton serveur, 14 derniers jours) ; il est déjà utilisé, tape ton prix pour le remplacer.</p>
+
+        <div class="panel">
+          <div class="panel-head"><h2>Réglages</h2></div>
+          <div class="row">
+            <div class="field" style="width:150px"><label for="cfgTaxe">Taxe HDV (%)</label><input id="cfgTaxe" class="num" type="number" min="0" max="50" step="0.5" value="2"></div>
+            <div class="field" style="min-width:260px"><label for="cfgRecolte">Ressources que je récolte</label>
+              <select id="cfgRecolte"><option value="hdv">Comptées au prix HDV (ce que tu pourrais les vendre)</option><option value="gratuit">Comptées gratuites</option></select></div>
+          </div>
+          <p class="note">La taxe est retirée de tout ce que tu vends : runes et items revendus. Vérifie le taux en jeu.</p>
         </div>
       </section>
 
-      <!-- JOURNAL -->
+      <!-- MES SÉRIES -->
       <section id="v-jr" class="stack" hidden>
         <div class="panel own-only">
-          <div class="panel-head"><h2>Nouvelle série</h2><span class="sub">Le coût est pré-rempli avec tes prix actuels</span></div>
+          <div class="panel-head"><h2>Nouvelle série</h2><span class="sub">Ou clique « Lancer » sur un item dans Opportunités</span></div>
           <form id="jform" class="jform" novalidate>
             <div class="field wide"><label for="jItem">Item</label><select id="jItem"></select></div>
-            <div class="field"><label for="jSrc">Origine</label><select id="jSrc"><option value="craft">Craft</option><option value="achat">Achat</option></select></div>
-            <div class="field"><label for="jDest">Destination</label><select id="jDest"><option value="brisage">Brisage</option><option value="revente">Revente HDV</option></select></div>
+            <div class="field"><label for="jSrc">Je l'obtiens en</label><select id="jSrc"><option value="craft">Craftant</option><option value="achat">Achetant</option></select></div>
+            <div class="field"><label for="jDest">Puis je le</label><select id="jDest"><option value="brisage">Brise</option><option value="revente">Revends</option></select></div>
             <div class="field"><label for="jQty">Quantité</label><input id="jQty" class="num" type="number" min="1" value="1"></div>
             <div class="field"><label for="jCost">Coût total</label><input id="jCost" class="num" type="number" min="0"></div>
-            <div class="field"><label for="jBuy">Date d'achat</label><input id="jBuy" type="date"></div>
+            <div class="field"><label for="jBuy">Date</label><input id="jBuy" type="date"></div>
             <button class="primary" type="submit" style="height:36px"><svg class="i"><use href="#i-plus"/></svg>Ajouter</button>
           </form>
         </div>
         <div class="panel">
-          <div class="panel-head"><h2>Historique</h2></div>
+          <div class="panel-head"><h2>Mes séries</h2>
+            <div class="seg" role="group" aria-label="Filtrer les séries">
+              <button type="button" data-jf="open" aria-pressed="true">En cours</button>
+              <button type="button" data-jf="done" aria-pressed="false">Terminées</button>
+              <button type="button" data-jf="all" aria-pressed="false">Toutes</button>
+            </div>
+          </div>
           <div class="totals" id="jtot"></div>
           <p class="hint" id="jHint" hidden></p>
           <div class="tbl-wrap">
             <table class="t-jr">
-              <thead><tr><th class="l">Item</th><th>Qté</th><th>Achat</th><th>Coût total</th><th>Brisage</th><th>Runes (estim.)</th><th>Vente</th><th>Encaissé</th><th>Bénéfice</th><th>Rendement</th><th class="l">État</th><th></th></tr></thead>
+              <thead><tr><th class="l">Série</th><th>Qté</th><th>Coût</th><th class="l">Étape</th><th class="l">Action</th><th>Résultat</th><th></th></tr></thead>
               <tbody id="jr"></tbody>
             </table>
           </div>
-          <p class="note">Au brisage, note la date et la valeur des runes. À la vente, note la date et les kamas encaissés : c'est ce montant qui compte dans le tableau de bord. Sans vente saisie, la valeur des runes compte à la date du brisage.</p>
         </div>
         <div class="panel" id="realPanel">
-          <div class="panel-head"><h2>Rendement réel par item</h2></div>
-          <div class="tbl-wrap"><table style="min-width:520px"><thead><tr><th class="l">Stratégie</th><th>Séries</th><th>Investi</th><th>Ventes</th><th>Bénéfice</th><th>Rendement réel</th></tr></thead><tbody id="realStrat"></tbody></table></div>
-          <div class="tbl-wrap"><table style="min-width:520px"><thead><tr><th class="l">Item</th><th>Séries</th><th>Investi</th><th>Ventes</th><th>Bénéfice</th><th>Rendement réel</th></tr></thead><tbody id="real"></tbody></table></div>
+          <div class="panel-head"><h2>Ce qui rapporte vraiment</h2><span class="sub">Séries terminées</span></div>
+          <div class="tbl-wrap"><table style="min-width:520px"><thead><tr><th class="l">Stratégie</th><th>Séries</th><th>Investi</th><th>Encaissé</th><th>Bénéfice</th><th>Rendement</th></tr></thead><tbody id="realStrat"></tbody></table></div>
+          <div class="tbl-wrap"><table style="min-width:520px"><thead><tr><th class="l">Item</th><th>Séries</th><th>Investi</th><th>Encaissé</th><th>Bénéfice</th><th>Rendement</th></tr></thead><tbody id="real"></tbody></table></div>
         </div>
       </section>
     </div>

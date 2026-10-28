@@ -291,11 +291,12 @@ $("#btnBackMe").addEventListener("click", () => setView(ME));
 const TITLES = {
   dash: ["Tableau de bord", "Bénéfices, ventes et rendement réel"],
   grp: ["Le groupe", "Bilans et classement des membres"],
-  crafts: ["Crafts suivis", "Coût de craft, valeur de brisage et plan d'achat"],
-  res: ["Ressources", "Prix unitaires utilisés pour calculer les coûts"],
-  jr: ["Journal", "Achats, brisages et ventes, série par série"]
+  crafts: ["Opportunités", "Quoi crafter ou acheter, et quoi en faire, pour gagner le plus"],
+  res: ["Prix du marché", "Tous tes prix au même endroit"],
+  jr: ["Mes séries", "Ce que tu as lancé, de l'achat jusqu'à la vente"]
 };
 function setTab(t) {
+  if (t !== tab && t === "res") missDirty();
   tab = t; lsSet("tab", t);
   $("#pageTitle").textContent = TITLES[t][0]; $("#pageSub").textContent = TITLES[t][1];
   document.querySelectorAll("nav [data-tab]").forEach(x => x.setAttribute("aria-selected", x.dataset.tab === t));
@@ -309,8 +310,10 @@ function render() {
   if (!D || !VIEW) return;
   renderHeader();
   $("#cCrafts").textContent = S.suivi.length;
-  $("#cRes").textContent = neededRes().length;
-  $("#cJr").textContent = S.journal.length;
+  const nMiss = neededRes().filter(([rid]) => priceInfo(rid).v == null).length + neededRunes().filter(([a]) => runePriceInfo(a).v == null).length;
+  $("#cRes").textContent = nMiss || "✓"; $("#cRes").title = nMiss ? `${nMiss} prix à compléter` : "Tous les prix sont renseignés";
+  const nRun = S.journal.filter(e => !(+e.encaisse > 0)).length;
+  $("#cJr").textContent = nRun; $("#cJr").title = `${nRun} série(s) en cours`;
   if (tab === "dash") renderDash();
   if (tab === "grp") renderGroup();
   if (tab === "crafts") renderCrafts();
@@ -345,68 +348,94 @@ const phCls = (pi, own) => own > 0 ? "" : pi.src === "groupe" ? "grp" : pi.src =
 const phTxt = pi => pi.src === "groupe" ? fmt(pi.v) : pi.src === "récolte" ? "0 (récoltée)" : "prix";
 const phTitle = pi => pi.src === "groupe" ? `Prix proposé par le groupe : médiane de ${pi.n || "plusieurs"} membre(s) de ton serveur, saisi(s) ces ${GROUP_DAYS} derniers jours. Tape ton propre prix pour le remplacer.` : pi.src === "moi" ? "Ton prix" : "";
 
-// ----- Crafts suivis
+// ----- Opportunités
+const VERB = { craft: "Crafter", achat: "Acheter", brisage: "briser", revente: "revendre" };
+const stratTxt = o => `${VERB[o.src]} puis ${VERB[o.dest]}`;
+// Fiabilité de l'estimation (3 = tes prix récents et un brisage connu, 1 = beaucoup d'incertitude)
+function reliability(s, st, M = S) {
+  if (!st.best) return { score: 0, why: [] };
+  const why = new Set(); let pen = 0; const b = st.best;
+  const age = (d, label) => { const a = ageDays(d); if (a > 14) { why.add(`${label} de plus de 14 jours`); pen += 2; } else if (a > 7) { why.add(`${label} de plus de 7 jours`); pen += 1; } };
+  if (b.src === "craft") for (const [rid] of recipeOf(s)) { const pi = priceInfo(rid, M); if (pi.src === "groupe") why.add("prix de ressources du groupe"); else if (pi.src === "moi") age(M.maj[rid], "prix de ressources"); }
+  if (b.src === "achat") age(s.ma, "prix d'achat");
+  if (b.dest === "revente") age(s.mv, "prix de revente");
+  if (b.dest === "brisage") {
+    if (!(+s.brk > 0)) why.add("brisage estimé par formule");
+    for (const l of st.est.lines) { const pi = runePriceInfo(l.a, M); if (pi.src === "groupe") why.add("prix de runes du groupe"); else if (pi.src === "moi") age(M.rm[l.a], "prix de runes"); }
+  }
+  if ([...why].some(w => w.includes("groupe"))) pen += 1;
+  if (why.has("brisage estimé par formule")) pen += 1;
+  const score = pen === 0 ? 3 : pen <= 1 ? 2 : 1;
+  return { score, why: [...why] };
+}
+const dots = r => r.score ? `<span class="dots d${r.score}" title="${r.why.length ? "À vérifier : " + esc(r.why.join(", ")) : "Tes prix, récents"}">${"●".repeat(r.score)}${"○".repeat(3 - r.score)}</span>` : "";
+function missingFor(s, st) {
+  // ce qu'il manque pour avoir au moins une option chiffrée
+  const out = [];
+  if (st.miss) out.push({ seg: "res", txt: `${st.miss} prix de ressource${st.miss > 1 ? "s" : ""}` });
+  if (!st.brk && !(+s.pv > 0)) out.push(st.est.none ? { seg: "items", txt: "valeur de brisage ou de revente" } : { seg: "runes", txt: `${st.est.miss} prix de rune${st.est.miss > 1 ? "s" : ""}` });
+  return out;
+}
+function realOf(itemId, M = S) {
+  const L = M.journal.filter(e => e.item === itemId && realize(e)); if (!L.length) return null;
+  const inv = L.reduce((a, e) => a + (+e.cout || 0), 0), rn = L.reduce((a, e) => a + realize(e).ventes, 0);
+  return { n: L.length, roi: inv ? (rn - inv) / inv : null, ben: rn - inv };
+}
+let oppSort = lsGet("oppSort") || "benef";
 function renderCrafts() {
-  const rows = stableOrder("crafts", S.suivi.map(s => ({ s, it: ITEMS.get(s.id), ...statsOf(s) })), r => r.s.id, (a, b) => (b.roi ?? -1e9) - (a.roi ?? -1e9));
-  const tx = taxe();
+  const cmp = oppSort === "roi" ? (a, b) => (b.roi ?? -1e9) - (a.roi ?? -1e9) : (a, b) => (b.benef ?? -1e18) - (a.benef ?? -1e18);
+  const rows = stableOrder("crafts", S.suivi.map(s => ({ s, it: ITEMS.get(s.id), ...statsOf(s) })), r => r.s.id, cmp);
   keepFocus(() => {
     $("#crafts").innerHTML = rows.length ? rows.map(r => {
-      const nm = r.it ? r.it.n : "Item retiré du jeu", isOpen = open.has(r.s.id);
-      const why = r.miss && !r.pa ? `${r.miss} prix de ressource${r.miss > 1 ? "s" : ""}` : !r.brk && !r.pv ? (r.est.none ? "brisage ou revente à saisir" : `${r.est.miss} prix de rune${r.est.miss > 1 ? "s" : ""}`) : "prix manquants";
-      const bestCell = r.best ? `<div class="best"><span class="pill ${pillCls(r.roi)}">${pillTxt(r.roi)}</span><b class="mono ${r.benef < 0 ? "neg" : "pos"}">${r.benef > 0 ? "+" : ""}${fmt(r.benef)}</b><small>${r.best.label}</small></div>` : `<span class="pill p-na" title="Il manque : ${why}">${why}</span>`;
-      const ph = r.est.val ? "≈ " + fmt(r.est.val) : r.est.part ? "≥ " + kfmt(r.est.part) : "kamas";
-      let html = `<tr class="item ${isOpen ? "open" : ""}" data-id="${r.s.id}">
-        <td class="l"><div class="iname"><span class="chev">›</span><span>${esc(nm)}<small>${r.it ? `Niv. ${r.it.l} · ${esc(D.types[r.it.t] || "")} · ${esc(r.it.j)}` : ""}${r.s.r ? " · recette modifiée" : ""}</small></span></div></td>
-        <td class="m">${r.miss ? (r.cost ? `<span class="neg" title="Coût partiel : prix manquants">≥ ${fmt(r.cost)}</span>` : `<span class="note">–</span>`) : fmt(r.cost)}</td>
-        <td><input class="num pr-in" id="pa-${r.s.id}" data-ipa="${r.s.id}" data-col="pa" type="number" min="0" value="${r.s.pa || ""}" placeholder="–" title="Prix auquel tu peux acheter l'item tout fait (à un joueur ou à l'HDV)" aria-label="Prix d'achat de ${esc(nm)}"></td>
-        <td><input class="num pr-in" id="pv-${r.s.id}" data-ipv="${r.s.id}" data-col="pv" type="number" min="0" value="${r.s.pv || ""}" placeholder="–" title="Prix auquel l'item se vend à l'HDV (la taxe est déduite dans le calcul)" aria-label="Prix de revente HDV de ${esc(nm)}"></td>
-        <td><input class="num brk-in" id="brk-${r.s.id}" data-brk="${r.s.id}" data-col="brk" type="number" min="0" value="${r.s.brk || ""}" placeholder="${ph}" aria-label="Valeur de brisage de ${esc(nm)}" title="${r.src === "estimé" ? "Estimé à partir des prix des runes. Saisis une valeur pour la remplacer." : r.src === "manuel" ? "Valeur saisie à la main. Efface-la pour revenir à l'estimation." : "Renseigne les prix des runes ou saisis une valeur."}">
-          <small class="note src">coef ${r.s.coef ?? 100} %${r.src ? " · " + r.src : ""}</small></td>
-        <td>${bestCell}</td>
-        <td class="acts"><button class="ghost own-only" data-serie="${r.s.id}" title="Ajouter une série de cet item au journal">+&nbsp;Série</button><button class="ghost x" data-del="${r.s.id}" title="Retirer de la liste" aria-label="Retirer ${esc(nm)}">×</button></td></tr>`;
-      if (isOpen) {
-        const rec = recipeOf(r.s);
-        const costTxt = r.miss ? (r.cost ? "≥ " + fmt(r.cost) : "inconnu") : fmt(r.cost);
-        const brkTxt = r.est.val ? fmt(r.est.val) : r.est.part ? "≥ " + fmt(r.est.part) : "inconnu";
-        const fmtIn = (o) => o.in != null ? fmt(o.in) : `<span class="note">${o.src === "achat" ? "prix d'achat ?" : r.miss ? "prix ressources ?" : "–"}</span>`;
-        const fmtOut = (o) => o.out != null ? fmt(o.out) : `<span class="note">${o.dest === "revente" ? "prix HDV ?" : "prix runes ?"}</span>`;
-        html += `<tr class="detail"><td colspan="7">
-          <section class="dcard d-cmp"><header><span class="dc-t">Les 4 options pour 1 exemplaire</span><span class="note">Taxe HDV de ${Math.round(tx * 1000) / 10} % déduite des ventes</span></header>
-          <div class="tbl-wrap" style="margin:0;padding:0 14px 6px"><table class="t-cmp"><thead><tr><th class="l">Option</th><th>Tu paies</th><th>Tu récupères</th><th>Bénéfice</th><th>Rendement</th></tr></thead><tbody>
-          ${r.opts.map(o => `<tr class="${r.best && r.best.k === o.k ? "is-best" : ""}"><td class="l">${r.best && r.best.k === o.k ? "★ " : ""}${o.label}</td><td class="m">${fmtIn(o)}</td><td class="m">${fmtOut(o)}</td>
-            <td class="m ${o.benef < 0 ? "neg" : o.benef > 0 ? "pos" : ""}">${o.ok ? fmt(o.benef) : "–"}</td><td>${o.ok ? `<span class="pill ${pillCls(o.roi)}">${pillTxt(o.roi)}</span>` : ""}</td></tr>`).join("")}
-          </tbody></table></div></section>
-          <div class="detail-grid">
-          <section class="dcard d-in">
-          <header><span class="dc-t"><span class="dc-ic">−</span>Recette · ce que tu dépenses</span><span class="dc-v">${costTxt}</span></header>
-          <div class="recipe">
-          <div class="rrow rhead"><span>Ressource</span><span style="text-align:right">Qté</span><span style="text-align:right">Prix unitaire</span><span style="text-align:right">Sous-total</span><span></span></div>
-          ${rec.map(([rid, q], k) => { const p = S.prix[rid], pi = priceInfo(rid), u = pi.v; const free = pi.src === "récolte"; return `<div class="rrow">
-            <span class="rn">${esc(D.res[rid] || "Ressource " + rid)}${S.rec[rid] ? ' <span class="tag">récoltée</span>' : ""}</span>
-            <input class="num" id="q-${r.s.id}-${rid}" data-rq="${r.s.id}" data-k="${k}" data-col="rq-${r.s.id}" type="number" min="1" value="${q}" aria-label="Quantité">
-            <input class="num ${phCls(pi, p)}" id="p-${r.s.id}-${rid}" data-price="${rid}" data-col="pp-${r.s.id}" type="number" min="0" value="${p || ""}" placeholder="${phTxt(pi)}" title="${phTitle(pi)}" aria-label="Prix de ${esc(D.res[rid] || "")}">
-            <span class="st">${u != null ? fmt(u * q) : "–"}</span>
-            <button class="ghost x" data-rdel="${r.s.id}" data-k="${k}" aria-label="Retirer l'ingrédient" title="Retirer l'ingrédient">×</button></div>`; }).join("")}
-          <div class="rfoot"><span class="note">Coût : ${r.miss ? (r.cost ? `au moins <b class="mono">${fmt(r.cost)}</b>` : "inconnu") + ` · ${r.miss} prix manquant${r.miss > 1 ? "s" : ""}` : `<b class="mono">${fmt(r.cost)}</b>`}</span>
-            ${r.s.r ? `<button class="ghost" data-rreset="${r.s.id}">Revenir à la recette du jeu</button>` : ""}</div></div></section>
-          <section class="dcard d-out">
-          <header><span class="dc-t"><span class="dc-ic">+</span>Brisage · ce que tu récupères</span><span class="coef-l"><label for="coef-${r.s.id}">Coef.</label><input class="num coef-in" id="coef-${r.s.id}" data-coef="${r.s.id}" type="number" min="0" max="4000" value="${r.s.coef ?? 100}" aria-label="Coefficient de brisage de ${esc(nm)} en %">%</span><span class="dc-v">${brkTxt}</span></header>
-          ${r.est.lines.length ? `<div class="recipe">
-            <div class="rrow runes rhead"><span>Rune obtenue (jet moyen)</span><span style="text-align:right">Runes</span><span style="text-align:right">Prix rune</span><span style="text-align:right">Valeur</span></div>
-            ${r.est.lines.map(l => `<div class="rrow runes"><span class="rn">${esc(l.nom)} <span class="note">${l.lo === l.hi ? l.lo : l.lo + "–" + l.hi}${l.pts > 1 ? ` · ${l.pts} pts/rune` : ""}</span></span>
-              <span class="st">${l.runes.toLocaleString("fr-FR", { maximumFractionDigits: 1 })}</span>
-              <input class="num ${phCls({ v: l.prix, src: l.psrc }, S.rp[l.a])}" id="rup-${r.s.id}-${l.a}" data-runep="${l.a}" data-col="rup-${r.s.id}" type="number" min="0" value="${S.rp[l.a] || ""}" placeholder="${phTxt({ v: l.prix, src: l.psrc })}" title="${phTitle({ v: l.prix, src: l.psrc, n: l.pn })}" aria-label="Prix de la rune ${esc(l.nom)}">
-              <span class="st">${l.val != null ? fmt(l.val) : "–"}</span></div>`).join("")}
-            <div class="rfoot"><span class="note">${r.est.val
-              ? `Brisage estimé : <b class="mono">${fmt(r.est.val)}</b> au coefficient ${r.s.coef ?? 100} %${tx ? `, soit <b class="mono">${fmt(r.est.val * (1 - tx))}</b> après ${Math.round(tx * 1000) / 10} % de taxe` : ""}.`
-              : `Brisage estimé : au moins <b class="mono">${fmt(r.est.part)}</b> · ${r.est.miss} prix de rune${r.est.miss > 1 ? "s" : ""} manquant${r.est.miss > 1 ? "s" : ""}. Les runes sont triées de la plus importante à la moins importante : commence par le haut.`}</span></div>
-          </div>` : `<p class="note">Pas d'effets connus pour cet item : saisis sa valeur de brisage à la main.</p>`}
-          </section></div></td></tr>`;
-      }
+      const nm = r.it ? r.it.n : "Item retiré du jeu", isOpen = open.has(r.s.id), rel = reliability(r.s, r);
+      const miss = missingFor(r.s, r);
+      const advice = r.best
+        ? `<span class="advice ${r.benef > 0 ? "" : "bad"}"><b>${stratTxt(r.best)}</b>${r.benef <= 0 ? "<small>aucune option rentable</small>" : ""}</span>`
+        : `<button class="fix own-only" data-fix="${r.s.id}" data-seg="${miss[0]?.seg || "res"}" type="button" title="Ouvrir les prix à compléter pour cet item">Compléter : ${esc(miss.map(m => m.txt).join(" + "))}</button><span class="note ro-only">prix manquants</span>`;
+      let html = `<tr class="item ${isOpen ? "open" : ""} ${r.best && r.benef <= 0 ? "dim" : ""}" data-id="${r.s.id}">
+        <td class="l"><div class="iname"><span class="chev">›</span><span>${esc(nm)}<small>${r.it ? `Niv. ${r.it.l} · ${esc(D.types[r.it.t] || "")}` : ""}</small></span></div></td>
+        <td class="l">${advice}</td>
+        <td class="m">${r.best ? fmt(r.best.in) : "–"}</td>
+        <td class="m">${r.best ? fmt(r.best.out) : "–"}</td>
+        <td class="m ${r.benef < 0 ? "neg" : r.benef > 0 ? "pos" : ""}"><b>${r.best ? (r.benef > 0 ? "+" : "") + fmt(r.benef) : "–"}</b></td>
+        <td>${r.best ? `<span class="pill ${pillCls(r.roi)}">${pillTxt(r.roi)}</span>` : ""}</td>
+        <td class="l">${dots(rel)}</td>
+        <td class="acts"><button class="ghost own-only" data-serie="${r.s.id}" title="Enregistrer une série avec le meilleur choix" ${r.best ? "" : "disabled"}>Lancer</button><button class="ghost x own-only" data-del="${r.s.id}" title="Ne plus suivre" aria-label="Ne plus suivre ${esc(nm)}">×</button></td></tr>`;
+      if (isOpen) html += `<tr class="detail"><td colspan="8">${oppDetail(r, rel)}</td></tr>`;
       return html;
-    }).join("") : `<tr><td colspan="7" class="empty">${isMe() ? "Aucun item suivi. Cherche un item ci-dessus pour l'ajouter (raccourci : /)." : "Ce membre ne suit encore aucun item."}</td></tr>`;
+    }).join("") : `<tr><td colspan="8" class="empty">${isMe() ? "Aucun item suivi. Cherche un item ci-dessus pour le suivre (raccourci : /)." : "Ce membre ne suit encore aucun item."}</td></tr>`;
   });
   renderPlan(rows);
+}
+function oppDetail(r, rel) {
+  const tx = taxe(); const real = realOf(r.s.id);
+  const cell = (o, side) => side === "in"
+    ? (o.in != null ? fmt(o.in) : `<button class="linkish own-only" data-fix="${r.s.id}" data-seg="${o.src === "achat" ? "items" : "res"}" type="button">${o.src === "achat" ? "prix d'achat ?" : "prix ressources ?"}</button>`)
+    : (o.out != null ? fmt(o.out) : `<button class="linkish own-only" data-fix="${r.s.id}" data-seg="${o.dest === "revente" ? "items" : (r.est.none ? "items" : "runes")}" type="button">${o.dest === "revente" ? "prix de revente ?" : "prix des runes ?"}</button>`);
+  const rec = recipeOf(r.s);
+  return `<div class="opp-detail">
+    <section class="dcard d-cmp"><header><span class="dc-t">Les 4 façons de gagner avec cet item</span><span class="note">pour 1 exemplaire · taxe HDV ${Math.round(tx * 1000) / 10} % déduite</span></header>
+      <div class="tbl-wrap" style="margin:0;padding:0 14px 6px"><table class="t-cmp"><thead><tr><th class="l">Option</th><th>Tu paies</th><th>Tu récupères</th><th>Bénéfice</th><th>Rendement</th></tr></thead><tbody>
+      ${r.opts.map(o => `<tr class="${r.best && r.best.k === o.k ? "is-best" : ""}"><td class="l">${r.best && r.best.k === o.k ? "★ " : ""}${stratTxt(o)}</td><td class="m">${cell(o, "in")}</td><td class="m">${cell(o, "out")}</td>
+        <td class="m ${o.benef < 0 ? "neg" : o.benef > 0 ? "pos" : ""}">${o.ok ? fmt(o.benef) : "–"}</td><td>${o.ok ? `<span class="pill ${pillCls(o.roi)}">${pillTxt(o.roi)}</span>` : ""}</td></tr>`).join("")}
+      </tbody></table></div></section>
+    <div class="detail-grid">
+      <section class="dcard d-in"><header><span class="dc-t"><span class="dc-ic">−</span>Craft : la recette</span><span class="dc-v">${r.miss ? (r.cost ? "≥ " + fmt(r.cost) : "?") : fmt(r.cost)}</span></header>
+        <ul class="kv">${rec.map(([rid, q]) => { const pi = priceInfo(rid); return `<li><span>${q} × ${esc(D.res[rid] || "Ressource " + rid)}${pi.src === "groupe" ? ' <span class="grp-tag">groupe</span>' : pi.src === "récolte" ? ' <span class="tag">récoltée</span>' : ""}</span><b class="mono">${pi.v != null ? fmt(pi.v * q) : '<span class="miss-t">prix ?</span>'}</b></li>`; }).join("")}</ul>
+        ${r.s.r ? `<p class="note" style="padding:0 14px 12px">Recette modifiée à la main. <button class="linkish own-only" data-rreset="${r.s.id}" type="button">Revenir à la recette du jeu</button></p>` : ""}
+      </section>
+      <section class="dcard d-out"><header><span class="dc-t"><span class="dc-ic">+</span>Brisage : les runes</span><span class="dc-v">${+r.s.brk > 0 ? fmt(r.s.brk) + " (saisi)" : r.est.val ? fmt(r.est.val) : r.est.part ? "≥ " + fmt(r.est.part) : "?"}</span></header>
+        ${r.est.lines.length ? `<ul class="kv">${r.est.lines.map(l => `<li><span>${l.runes.toLocaleString("fr-FR", { maximumFractionDigits: 1 })} × rune ${esc(l.nom)}${l.psrc === "groupe" ? ' <span class="grp-tag">groupe</span>' : ""}</span><b class="mono">${l.val != null ? fmt(l.val) : '<span class="miss-t">prix ?</span>'}</b></li>`).join("")}</ul>
+        <p class="note" style="padding:0 14px 12px">Au coefficient ${r.s.coef ?? 100} %, avec le jet moyen de chaque caractéristique. ${+r.s.brk > 0 ? "Tu as saisi une valeur de brisage : elle remplace cette estimation." : "Estimation par formule : compare-la à ton premier vrai brisage."}</p>`
+        : `<p class="note" style="padding:12px 14px">Pas d'effets connus : saisis sa valeur de brisage dans Prix du marché › Items.</p>`}
+      </section>
+    </div>
+    <div class="opp-foot">
+      ${real ? `<span class="hint">Ton réel sur ${real.n} série${real.n > 1 ? "s" : ""} : <b>${pillTxt(real.roi)}</b> (${fmt(real.ben)} de bénéfice)${r.best ? ` · estimé aujourd'hui : ${pillTxt(r.roi)}` : ""}</span>` : ""}
+      ${rel.why.length ? `<span class="note">À vérifier : ${esc(rel.why.join(", "))}.</span>` : ""}
+      <button class="own-only" data-fix="${r.s.id}" data-seg="items" type="button">Modifier les prix de cet item</button>
+    </div>
+  </div>`;
 }
 // ----- Plan optimal : quels crafts faire, et combien, pour le plus gros bénéfice avec un budget donné
 // Problème du sac à dos borné : chaque exemplaire est un « objet » (coût, gain). Avec une baisse de coefficient,
@@ -458,92 +487,141 @@ function renderPlan(rows) {
   cands = cands.map(r => ({ ...r, cost: r.best.in, brk: r.best.out }));
   const { picks, inv, ben } = optimizePlan(cands, budget, maxq, drop);
   const simple = greedyPlan(cands, budget, maxq, drop);
-  $("#plan").innerHTML = picks.length ? picks.map(p => `<li><span class="qty">${p.q}×</span><span>${esc(p.it.n)}${p.untracked ? ` <span class="grp-tag">non suivi</span> <button class="ghost own-only follow" data-follow="${p.it.id}" type="button">Suivre</button>` : ""}<br><small class="note">${p.best.label} · ${fmt(p.cost)} pièce · ${pillTxt(p.roi)}${p.untracked ? " · coef. 100 %" : ""}</small></span><span class="pf">+${fmt(p.gain)}</span></li>`).join("")
-    : `<li class="empty">${cands.length ? `Ton budget (${fmt(budget)}) ne suffit pas : le craft rentable le moins cher coûte ${fmt(Math.min(...cands.map(c => c.cost)))}. Augmente le budget.` : "Renseigne les prix des ressources et des runes pour obtenir un plan."}</li>`;
-  $("#tInv").textContent = fmt(inv); $("#tBen").textContent = fmt(ben); $("#tLeft").textContent = fmt(budget - inv);
+  $("#plan").innerHTML = picks.length ? picks.map(p => `<tr>
+      <td class="l"><b>${esc(p.it.n)}</b>${p.untracked ? ` <span class="grp-tag">non suivi</span>` : ""}</td>
+      <td class="l">${stratTxt(p.best)}</td><td class="m"><b>${p.q}</b></td><td class="m">${fmt(p.q * p.cost)}</td><td class="m pos"><b>+${fmt(p.gain)}</b></td>
+      <td class="acts">${p.untracked ? `<button class="ghost own-only follow" data-follow="${p.it.id}" type="button">Suivre</button>` : ""}</td></tr>`).join("")
+    : `<tr><td colspan="6" class="empty">${cands.length ? `Ton budget (${fmt(budget)}) ne suffit pas : l'option rentable la moins chère coûte ${fmt(Math.min(...cands.map(c => c.cost)))}.` : S.suivi.length ? "Aucune option rentable pour l'instant : complète les prix de tes items (bouton « Compléter » ci-dessous)." : "Suis quelques items ci-dessous, puis renseigne leurs prix."}</td></tr>`;
+  $("#tInv").textContent = fmt(inv); $("#tBen").textContent = (ben > 0 ? "+" : "") + fmt(ben); $("#tLeft").textContent = fmt(budget - inv);
   $("#tRoi").textContent = inv ? pillTxt(ben / inv) : "–";
   $("#planGain").hidden = !(picks.length && ben - simple > Math.max(1, ben * 0.005));
-  $("#planGain").innerHTML = `Ce plan rapporte <b>${fmt(ben - simple)}</b> de plus que de prendre simplement les items par ordre de rendement.`;
-  $("#planInfo").textContent = `${cands.length} item${cands.length > 1 ? "s" : ""} rentable${cands.length > 1 ? "s" : ""} pris en compte${all ? ` (dont ${allKnownItems().length} non suivis)` : ""}.`;
+  $("#planGain").innerHTML = `Cette combinaison rapporte <b>${fmt(ben - simple)}</b> de plus que de prendre les items par ordre de rendement.`;
+  $("#planInfo").textContent = cands.length ? `Calculé parmi ${cands.length} item${cands.length > 1 ? "s" : ""} rentable${cands.length > 1 ? "s" : ""}${all ? ` (dont ${allKnownItems().length} que tu ne suis pas, comptés au coefficient 100 %)` : ""}. Au plus ${maxq} exemplaire${maxq > 1 ? "s" : ""} par item pour ne pas faire chuter le coefficient ou le prix.` : "";
 }
 
-// ----- Ressources et runes
-function neededRes() {
+// ----- Prix du marché
+let mkSeg = lsGet("mkSeg") || "res";
+// « Seulement les prix à compléter » : la liste est figée au moment où on l'ouvre,
+// pour qu'une ligne ne disparaisse pas sous le curseur dès qu'on tape son prix.
+let missSnap = null; const missDirty = () => { missSnap = null; };
+function neededRes(onlyId) {
   const m = new Map();
-  for (const s of S.suivi) { const it = ITEMS.get(s.id); for (const [rid] of recipeOf(s)) { if (!m.has(rid)) m.set(rid, []); m.get(rid).push(it ? it.n : "?"); } }
+  for (const s of S.suivi) { if (onlyId && s.id !== onlyId) continue; const it = ITEMS.get(s.id); for (const [rid] of recipeOf(s)) { if (!m.has(rid)) m.set(rid, []); m.get(rid).push(it ? it.n : "?"); } }
   return [...m.entries()];
 }
-function neededRunes() {
+function neededRunes(onlyId) {
   const m = new Map();
-  for (const s of S.suivi) { const it = ITEMS.get(s.id); for (const [a] of D.fx?.[s.id] || []) { if (!D.stats[a]) continue; if (!m.has(a)) m.set(a, []); m.get(a).push(it ? it.n : "?"); } }
+  for (const s of S.suivi) { if (onlyId && s.id !== onlyId) continue; const it = ITEMS.get(s.id); for (const [a] of D.fx?.[s.id] || []) { if (!D.stats[a]) continue; if (!m.has(a)) m.set(a, []); m.get(a).push(it ? it.n : "?"); } }
   return [...m.entries()];
 }
 function renderRes() {
-  const f = norm(rfilter);
+  const f = norm(rfilter), only = +$("#mkItem").value || 0, onlyMiss = $("#mkMissing").checked;
+  // sélecteur d'item
+  const sel = $("#mkItem"), cur = sel.value;
+  sel.innerHTML = `<option value="">Tous mes items</option>` + S.suivi.map(s => `<option value="${s.id}">${esc(ITEMS.get(s.id)?.n || s.id)}</option>`).join("");
+  sel.value = S.suivi.some(s => String(s.id) === cur) ? cur : "";
+  document.querySelectorAll("[data-mk]").forEach(b => b.setAttribute("aria-pressed", b.dataset.mk === mkSeg));
+  ["res", "runes", "items"].forEach(k => $("#mk-" + k).hidden = k !== mkSeg);
   $("#cfgTaxe").value = S.cfg.taxe ?? 2; $("#cfgRecolte").value = S.cfg.recolte || "hdv";
-  const runes = stableOrder("runes", neededRunes().map(([a, its]) => ({ a, its, st: D.stats[a] })).filter(x => !f || norm(x.st[0]).includes(f)), x => x.a,
-    (x, y) => ((S.rp[x.a] > 0) - (S.rp[y.a] > 0)) || x.st[0].localeCompare(y.st[0], "fr"));
-  const list = stableOrder("res", neededRes().map(([rid, its]) => ({ rid, its, n: D.res[rid] || "Ressource " + rid })).filter(x => !f || norm(x.n).includes(f)), x => x.rid,
-    (a, b) => ((unitPrice(a.rid) != null) - (unitPrice(b.rid) != null)) || a.n.localeCompare(b.n, "fr"));
+
+  const allRes = neededRes(only).map(([rid, its]) => ({ rid, its, n: D.res[rid] || "Ressource " + rid, pi: priceInfo(rid) }));
+  const allRunes = neededRunes(only).map(([a, its]) => ({ a, its, st: D.stats[a], pi: runePriceInfo(a) }));
+  const items = S.suivi.filter(s => !only || s.id === only).map(s => ({ s, it: ITEMS.get(s.id), st: statsOf(s) }));
+  const resMiss = allRes.filter(x => x.pi.v == null).length, runeMiss = allRunes.filter(x => x.pi.v == null).length;
+  const itemMiss = items.filter(x => !x.st.best).length;
+  $("#mkNres").textContent = resMiss ? resMiss : ""; $("#mkNrunes").textContent = runeMiss ? runeMiss : ""; $("#mkNitems").textContent = itemMiss ? itemMiss : "";
+  $("#cRunes").textContent = allRunes.length;
+
+  if (!missSnap) missSnap = new Set([...allRes.filter(x => x.pi.v == null).map(x => "r" + x.rid), ...allRunes.filter(x => x.pi.v == null).map(x => "u" + x.a), ...items.filter(x => !x.st.best).map(x => "i" + x.s.id)]);
+  const keepRow = (name, key) => (!f || norm(name).includes(f)) && (!onlyMiss || missSnap.has(key));
+  const runes = stableOrder("runes", allRunes.filter(x => keepRow(x.st[0], "u" + x.a)), x => x.a, (x, y) => ((x.pi.v != null) - (y.pi.v != null)) || x.st[0].localeCompare(y.st[0], "fr"));
+  const list = stableOrder("res", allRes.filter(x => keepRow(x.n, "r" + x.rid)), x => x.rid, (a, b) => ((a.pi.v != null) - (b.pi.v != null)) || a.n.localeCompare(b.n, "fr"));
+  const its = stableOrder("items", items.filter(x => keepRow(x.it?.n || "", "i" + x.s.id)), x => x.s.id, (a, b) => (a.it?.n || "").localeCompare(b.it?.n || "", "fr"));
+  const empty = (n, what) => `<tr><td colspan="${n}" class="empty">${!S.suivi.length ? "Suis des items dans Opportunités pour voir les prix à renseigner." : onlyMiss ? `Tous les ${what} sont renseignés.` : "Rien ne correspond au filtre."}</td></tr>`;
+  const upd = (own, d, pi) => own > 0 ? fdate(d) : pi.src === "groupe" ? `<span class="grp-tag">groupe</span>` : "–";
   keepFocus(() => {
-    $("#runes").innerHTML = runes.length ? runes.map(x => { const p = S.rp[x.a], pi = runePriceInfo(x.a); return `<tr>
+    $("#res").innerHTML = list.length ? list.map(x => { const p = S.prix[x.rid], rc = !!S.rec[x.rid]; return `<tr>
+      <td class="l"><b>${esc(x.n)}</b></td><td class="l note">${esc([...new Set(x.its)].join(", "))}</td>
+      <td><label class="chk"><input type="checkbox" id="rec-${x.rid}" data-rec="${x.rid}" ${rc ? "checked" : ""} aria-label="Je récolte ${esc(x.n)}"><span>récoltée</span></label></td>
+      <td><input class="num ${phCls(x.pi, p)}" id="rp-${x.rid}" data-price="${x.rid}" data-col="rp" type="number" min="0" value="${p || ""}" placeholder="${phTxt(x.pi)}" title="${phTitle(x.pi)}" aria-label="Prix de ${esc(x.n)}"></td>
+      <td class="m note">${upd(p, S.maj[x.rid], x.pi)}</td></tr>`; }).join("") : empty(5, "prix de ressources");
+    $("#runes").innerHTML = runes.length ? runes.map(x => { const p = S.rp[x.a]; return `<tr>
       <td class="l"><b>Rune ${esc(x.st[0])}</b><small class="note adv" style="display:block">poids ${x.st[1]}</small></td>
       <td class="l note">${esc([...new Set(x.its)].slice(0, 4).join(", "))}${new Set(x.its).size > 4 ? "…" : ""}</td>
       <td class="adv"><input class="num" id="rpt-${x.a}" data-runepts="${x.a}" data-col="rpt" type="number" min="1" value="${S.rpt[x.a] || x.st[2]}" aria-label="Points apportés par une rune ${esc(x.st[0])}" style="width:80px"></td>
-      <td><input class="num ${phCls(pi, p)}" id="rup-${x.a}" data-runep="${x.a}" data-col="rup" type="number" min="0" value="${p || ""}" placeholder="${phTxt(pi)}" title="${phTitle(pi)}" aria-label="Prix de la rune ${esc(x.st[0])}"></td>
-      <td class="m note">${p > 0 ? fdate(S.rm[x.a]) : pi.src === "groupe" ? `<span class="grp-tag">groupe</span>` : "–"}</td></tr>`; }).join("")
-      : `<tr><td colspan="5" class="empty">${S.suivi.length ? "Aucune rune ne correspond au filtre." : "Ajoute des items dans « Crafts suivis » pour voir les runes qu'ils donnent."}</td></tr>`;
-    $("#res").innerHTML = list.length ? list.map(x => { const p = S.prix[x.rid], rc = !!S.rec[x.rid], pi = priceInfo(x.rid); return `<tr>
-      <td class="l"><b>${esc(x.n)}</b></td><td class="l note">${esc([...new Set(x.its)].join(", "))}</td>
-      <td><label class="chk"><input type="checkbox" id="rec-${x.rid}" data-rec="${x.rid}" ${rc ? "checked" : ""} aria-label="Je récolte ${esc(x.n)}"><span>récoltée</span></label></td>
-      <td><input class="num ${phCls(pi, p)}" id="rp-${x.rid}" data-price="${x.rid}" data-col="rp" type="number" min="0" value="${p || ""}" placeholder="${phTxt(pi)}" title="${phTitle(pi)}" aria-label="Prix de ${esc(x.n)}"></td>
-      <td class="m note">${p > 0 ? fdate(S.maj[x.rid]) : pi.src === "groupe" ? `<span class="grp-tag">groupe</span>` : "–"}</td></tr>`; }).join("")
-      : `<tr><td colspan="5" class="empty">${S.suivi.length ? "Aucune ressource ne correspond au filtre." : "Ajoute des items dans « Crafts suivis » pour voir les ressources à acheter."}</td></tr>`;
+      <td><input class="num ${phCls(x.pi, p)}" id="rup-${x.a}" data-runep="${x.a}" data-col="rup" type="number" min="0" value="${p || ""}" placeholder="${phTxt(x.pi)}" title="${phTitle(x.pi)}" aria-label="Prix de la rune ${esc(x.st[0])}"></td>
+      <td class="m note">${upd(p, S.rm[x.a], x.pi)}</td></tr>`; }).join("") : empty(5, "prix de runes");
+    $("#mkItems").innerHTML = its.length ? its.map(x => { const s = x.s, nm = x.it?.n || s.id; return `<tr>
+      <td class="l"><b>${esc(nm)}</b><small class="note" style="display:block">${x.st.best ? "Meilleur choix : " + stratTxt(x.st.best) : "Pas encore chiffré"}</small></td>
+      <td><input class="num pr-in" id="pa-${s.id}" data-ipa="${s.id}" data-col="pa" type="number" min="0" value="${s.pa || ""}" placeholder="–" aria-label="Prix d'achat de ${esc(nm)}"></td>
+      <td><input class="num pr-in" id="pv-${s.id}" data-ipv="${s.id}" data-col="pv" type="number" min="0" value="${s.pv || ""}" placeholder="–" aria-label="Prix de revente HDV de ${esc(nm)}"></td>
+      <td><input class="num coef-in" id="coef-${s.id}" data-coef="${s.id}" data-col="coef" type="number" min="0" max="4000" value="${s.coef ?? 100}" aria-label="Coefficient de brisage de ${esc(nm)}"></td>
+      <td><input class="num pr-in" id="brk-${s.id}" data-brk="${s.id}" data-col="brk" type="number" min="0" value="${s.brk || ""}" placeholder="${x.st.est.val ? "≈ " + fmt(x.st.est.val) : x.st.est.part ? "≥ " + kfmt(x.st.est.part) : "–"}" title="Laisse vide pour utiliser l'estimation à partir des runes" aria-label="Valeur de brisage de ${esc(nm)}"></td></tr>`; }).join("") : empty(5, "items");
   });
-  $("#cRunes").textContent = runes.length;
+}
+function openMarketFor(id, seg) {
+  if (!isMe()) setView(ME);
+  missDirty(); setTab("res"); mkSeg = seg || "res"; lsSet("mkSeg", mkSeg); missDirty();
+  $("#mkItem").innerHTML = `<option value="">Tous mes items</option>` + S.suivi.map(s => `<option value="${s.id}">${esc(ITEMS.get(s.id)?.n || s.id)}</option>`).join("");
+  $("#mkItem").value = String(id); $("#mkMissing").checked = seg !== "items"; renderRes(); applyRO();
+  const first = document.querySelector(`#mk-${mkSeg} input.miss, #mk-${mkSeg} tbody input[type=number]`); first?.focus();
 }
 
 // ----- Journal
+let jFilter = lsGet("jFilter") || "open"; const openJ = new Set();
 function renderJr() {
   const sel = $("#jItem"), cur = sel.value;
-  sel.innerHTML = S.suivi.length ? S.suivi.map(s => { const it = ITEMS.get(s.id); return `<option value="${s.id}">${esc(it ? it.n : s.id)}</option>`; }).join("") : `<option value="">Ajoute d'abord un item suivi</option>`;
-  if (cur && S.suivi.some(s => String(s.id) === cur)) sel.value = cur;
+  sel.innerHTML = S.suivi.length ? S.suivi.map(s => { const it = ITEMS.get(s.id); return `<option value="${s.id}">${esc(it ? it.n : s.id)}</option>`; }).join("") : `<option value="">Suis d'abord un item dans Opportunités</option>`;
+  if (cur && S.suivi.some(s => String(s.id) === cur)) sel.value = cur; else prefillStrat();
   if (!$("#jBuy").value) $("#jBuy").value = today();
   if (!$("#jCost").dataset.touched) prefillCost();
-  const J = [...S.journal].sort((a, b) => (b.achat || "").localeCompare(a.achat || ""));
+  document.querySelectorAll("[data-jf]").forEach(b => b.setAttribute("aria-pressed", b.dataset.jf === jFilter));
+  const all = [...S.journal].sort((a, b) => (b.achat || "").localeCompare(a.achat || ""));
+  const done = all.filter(e => realize(e) && (+e.encaisse > 0 || stratOf(e.src, e.dest).dest === "brisage"));
+  const isDone = e => +e.encaisse > 0;
+  const J = all.filter(e => jFilter === "all" || (jFilter === "done" ? isDone(e) : !isDone(e)));
   keepFocus(() => {
     $("#jr").innerHTML = J.length ? J.map(e => {
-      const R = realize(e), ben = R ? R.ventes - (+e.cout || 0) : null, roi = R && e.cout > 0 ? ben / e.cout : null;
-      const sg = stratOf(e.src, e.dest), rev = sg.dest === "revente";
-      const st = +e.encaisse > 0 ? ["s-done", "Vendu"] : +e.runes > 0 ? ["s-brk", "Brisé"] : ["s-run", rev ? "À vendre" : "En stock"];
-      const qk = +e.encaisse > 0 ? null : (rev || +e.runes > 0) ? "vendu" : "brise";
-      const inp = (f, type, w, extra = "") => `<td style="width:${w}px"><input ${type === "date" ? "" : 'class="num"'} id="j${f}-${e._id}" data-j="${e._id}" data-f="${f}" data-col="j-${f}" type="${type}" ${type === "number" ? 'min="0"' : ""} value="${esc(e[f] || "")}" ${extra}></td>`;
-      return `<tr><td class="l"><b>${esc(e.nom)}</b><small class="strat">${sg.label}</small></td>
-        ${inp("qte", "number", 64, 'aria-label="Quantité"')}${inp("achat", "date", 138, 'aria-label="Date d\'achat"')}${inp("cout", "number", 104, 'aria-label="Coût total"')}
-        ${inp("brisage", "date", 138, 'aria-label="Date de brisage"')}${inp("runes", "number", 104, 'placeholder="kamas" aria-label="Valeur des runes"')}
-        ${inp("vente", "date", 138, 'aria-label="Date de vente"')}${inp("encaisse", "number", 104, 'placeholder="kamas" aria-label="Kamas encaissés"')}
-        <td class="m ${ben < 0 ? "neg" : ben > 0 ? "pos" : ""}">${R ? fmt(ben) : "–"}</td>
-        <td>${roi != null ? `<span class="pill ${pillCls(roi)}">${pillTxt(roi)}</span>` : ""}</td>
-        <td class="l"><span class="status ${st[0]}">${st[1]}</span>${qk ? ` <button class="quick own-only" data-quick="${qk}" data-jid="${e._id}" title="${qk === "vendu" ? "Marquer vendu aujourd'hui (raccourci : V)" : "Marquer brisé aujourd'hui (raccourci : B)"}">${qk === "vendu" ? "Vendu" : "Brisé"}</button>` : ""}</td>
-        <td><button class="ghost x" data-jdel="${e._id}" aria-label="Supprimer la ligne" title="Supprimer">×</button></td></tr>`;
-    }).join("") : `<tr><td colspan="12" class="empty">${isMe() ? "Aucune série enregistrée. Ajoute ton premier achat ci-dessus." : "Ce membre n'a encore enregistré aucune série."}</td></tr>`;
+      const sg = stratOf(e.src, e.dest), rev = sg.dest === "revente", R = realize(e);
+      const ben = R ? R.ventes - (+e.cout || 0) : null, roi = R && e.cout > 0 ? ben / e.cout : null;
+      const step = +e.encaisse > 0 ? ["s-done", "Vendu"] : +e.runes > 0 ? ["s-brk", "Brisé, runes à vendre"] : rev ? ["s-run", "À revendre"] : ["s-run", "À briser"];
+      const act = +e.encaisse > 0 ? "" : (rev || +e.runes > 0)
+        ? `<button class="quick own-only" data-quick="vendu" data-jid="${e._id}" title="Raccourci : V">Vendu</button>`
+        : `<button class="quick own-only" data-quick="brise" data-jid="${e._id}" title="Raccourci : B">Brisé</button>`;
+      const isOpen = openJ.has(e._id);
+      const inp = (f, label, type) => `<div class="field"><label for="j${f}-${e._id}">${label}</label><input ${type === "date" ? "" : 'class="num"'} id="j${f}-${e._id}" data-j="${e._id}" data-f="${f}" type="${type}" ${type === "number" ? 'min="0"' : ""} value="${esc(e[f] || "")}"></div>`;
+      return `<tr class="jrow ${isOpen ? "open" : ""}" data-jid="${e._id}">
+        <td class="l"><b>${esc(e.nom)}</b><small class="strat">${stratTxt(sg)} · ${fdate(e.achat)}</small></td>
+        <td class="m">${e.qte || 1}</td><td class="m">${fmt(+e.cout || 0)}</td>
+        <td class="l"><span class="status ${step[0]}">${step[1]}</span></td>
+        <td class="l">${act}</td>
+        <td class="m ${ben < 0 ? "neg" : ben > 0 ? "pos" : ""}">${R ? `<b>${ben > 0 ? "+" : ""}${fmt(ben)}</b> ${roi != null ? `<span class="pill ${pillCls(roi)}">${pillTxt(roi)}</span>` : ""}${+e.encaisse > 0 ? "" : '<small class="note" style="display:block">estimé</small>'}` : "–"}</td>
+        <td class="acts"><button class="ghost" data-jedit="${e._id}" type="button" aria-expanded="${isOpen}">${isOpen ? "Fermer" : "Détails"}</button></td></tr>
+        ${isOpen ? `<tr class="detail"><td colspan="7"><div class="jedit">
+          ${inp("qte", "Quantité", "number")}${inp("cout", "Coût total", "number")}${inp("achat", "Date d'achat", "date")}
+          ${rev ? "" : inp("brisage", "Date de brisage", "date") + inp("runes", "Valeur des runes", "number")}
+          ${inp("vente", "Date de vente", "date")}${inp("encaisse", "Kamas encaissés", "number")}
+          <div class="field"><label>&nbsp;</label><button class="ghost x own-only" data-jdel="${e._id}" type="button">Supprimer</button></div>
+        </div></td></tr>` : ""}`;
+    }).join("") : `<tr><td colspan="7" class="empty">${!all.length ? (isMe() ? "Aucune série. Clique « Lancer » sur un item dans Opportunités, ou ajoute-en une ci-dessus." : "Ce membre n'a encore enregistré aucune série.") : jFilter === "open" ? "Aucune série en cours." : "Aucune série terminée."}</td></tr>`;
   });
-  const done = J.filter(e => realize(e)), run = J.filter(e => !realize(e));
-  const inv = done.reduce((a, e) => a + (+e.cout || 0), 0), rn = done.reduce((a, e) => a + realize(e).ventes, 0);
+  const fin = all.filter(isDone), run = all.filter(e => !isDone(e));
+  const inv = fin.reduce((a, e) => a + (+e.cout || 0), 0), rn = fin.reduce((a, e) => a + (+e.encaisse || 0), 0);
   const stock = run.reduce((a, e) => a + (+e.cout || 0), 0);
-  $("#jtot").innerHTML = `<div class="tot"><span>Investi au total</span><b>${fmt(inv + stock)}</b></div>
-    <div class="tot"><span>En cours</span><b>${fmt(stock)}</b><small class="note">${run.length} série(s)</small></div>
-    <div class="tot"><span>Ventes / runes</span><b>${fmt(rn)}</b><small class="note">${done.length} série(s) brisée(s) ou vendue(s)</small></div>
-    <div class="tot big"><span>Bénéfice réalisé</span><b>${done.length ? fmt(rn - inv) : "–"}</b></div>
-    <div class="tot"><span>Rendement réalisé</span><b>${inv ? pillTxt((rn - inv) / inv) : "–"}</b></div>`;
-  $("#jHint").hidden = !(run.length && isMe());
-  $("#jHint").innerHTML = `<b>${run.length} série${run.length > 1 ? "s" : ""} en cours.</b> Une série compte dans le bénéfice une fois brisée ou vendue : clique <b>Brisé</b> (ou saisis la valeur des runes), puis <b>Vendu</b> quand tu as encaissé. Pour une revente en HDV, clique directement <b>Vendu</b>.`;
-  const arr = byItem(done);
-  $("#realPanel").hidden = !arr.length;
-  const bs = new Map();
-  for (const e of done) { const k = stratOf(e.src, e.dest).label; const o = bs.get(k) || { k, n: 0, inv: 0, rn: 0 }; o.n++; o.inv += +e.cout || 0; o.rn += realize(e).ventes; bs.set(k, o); }
-  $("#realStrat").innerHTML = [...bs.values()].sort((a, b) => (b.rn - b.inv) - (a.rn - a.inv)).map(o => { const roi = o.inv ? (o.rn - o.inv) / o.inv : null; return `<tr><td class="l"><b>${o.k}</b></td><td class="m">${o.n}</td><td class="m">${fmt(o.inv)}</td><td class="m">${fmt(o.rn)}</td><td class="m ${o.rn - o.inv < 0 ? "neg" : "pos"}">${fmt(o.rn - o.inv)}</td><td>${roi != null ? `<span class="pill ${pillCls(roi)}">${pillTxt(roi)}</span>` : ""}</td></tr>`; }).join("");
-  $("#real").innerHTML = arr.map(o => `<tr><td class="l"><b>${esc(o.k)}</b></td><td class="m">${o.n}</td><td class="m">${fmt(o.inv)}</td><td class="m">${fmt(o.rn)}</td><td class="m ${o.rn - o.inv < 0 ? "neg" : "pos"}">${fmt(o.rn - o.inv)}</td><td>${o.roi != null ? `<span class="pill ${pillCls(o.roi)}">${pillTxt(o.roi)}</span>` : ""}</td></tr>`).join("");
+  $("#jtot").innerHTML = `<div class="tot"><span>En cours</span><b>${fmt(stock)}</b><small class="note">${run.length} série(s) pas encore vendue(s)</small></div>
+    <div class="tot"><span>Encaissé</span><b>${fmt(rn)}</b><small class="note">${fin.length} série(s) vendue(s)</small></div>
+    <div class="tot big"><span>Bénéfice réel</span><b>${fin.length ? (rn - inv > 0 ? "+" : "") + fmt(rn - inv) : "–"}</b></div>
+    <div class="tot"><span>Rendement réel</span><b>${inv ? pillTxt((rn - inv) / inv) : "–"}</b></div>`;
+  $("#jHint").hidden = !(run.length && isMe() && jFilter === "open");
+  $("#jHint").innerHTML = `Pour chaque série : <b>Brisé</b> quand tu as brisé (la valeur des runes est estimée, corrige-la dans Détails), puis <b>Vendu</b> quand tu as encaissé. Pour une revente, directement <b>Vendu</b>.`;
+  const bs = new Map(), bi = new Map();
+  for (const e of fin) {
+    const k = stratTxt(stratOf(e.src, e.dest));
+    for (const [m, key] of [[bs, k], [bi, e.nom]]) { const o = m.get(key) || { k: key, n: 0, inv: 0, rn: 0 }; o.n++; o.inv += +e.cout || 0; o.rn += +e.encaisse || 0; m.set(key, o); }
+  }
+  const rowsOf = m => [...m.values()].sort((a, b) => (b.rn - b.inv) - (a.rn - a.inv)).map(o => { const roi = o.inv ? (o.rn - o.inv) / o.inv : null; return `<tr><td class="l"><b>${esc(o.k)}</b></td><td class="m">${o.n}</td><td class="m">${fmt(o.inv)}</td><td class="m">${fmt(o.rn)}</td><td class="m ${o.rn - o.inv < 0 ? "neg" : "pos"}">${fmt(o.rn - o.inv)}</td><td>${roi != null ? `<span class="pill ${pillCls(roi)}">${pillTxt(roi)}</span>` : ""}</td></tr>`; }).join("");
+  $("#realPanel").hidden = !fin.length;
+  $("#realStrat").innerHTML = rowsOf(bs); $("#real").innerHTML = rowsOf(bi);
 }
 function prefillCost() {
   const s = S.suivi.find(x => String(x.id) === $("#jItem").value); const q = Math.max(1, +$("#jQty").value || 1);
@@ -800,6 +878,7 @@ function setRunePts(a, v) { pendingPrix.add("rpt:" + a); const n = Math.max(1, M
 function setCfg(k, v) { pendingPrix.add("cfg:"); S.cfg = { ...S.cfg, [k]: v }; later("prix", () => Store.savePrix()); }
 document.addEventListener("input", e => {
   const t = e.target;
+  if (t.id === "oppSort") { oppSort = t.value; lsSet("oppSort", oppSort); renderCrafts(); applyRO(); return; }
   if (t.id === "budget" || t.id === "maxq" || t.id === "dropPct") { lsSet(t.id, t.value); renderCrafts(); applyRO(); return; }
   if (t.id === "rq") { rfilter = t.value; renderRes(); applyRO(); return; }
   if (!isMe()) return;
@@ -838,6 +917,7 @@ $("#crafts").addEventListener("click", e => {
   const rr = t.closest("[data-rreset]");
   if (rr) { if (!isMe()) return; const s = S.suivi.find(x => x.id === +rr.dataset.rreset); delete s.r; Store.saveSuivi(); render(); toast("Recette du jeu restaurée"); return; }
   const sb = t.closest("[data-serie]"); if (sb) { quickSerie(+sb.dataset.serie); return; }
+  const fx = t.closest("[data-fix]"); if (fx) { openMarketFor(+fx.dataset.fix, fx.dataset.seg); return; }
   const tr = t.closest("tr.item"); if (tr) { const id = +tr.dataset.id; open.has(id) ? open.delete(id) : open.add(id); renderCrafts(); applyRO(); }
 });
 function jErr(m) { let el = $("#jErr"); if (!el) { el = document.createElement("p"); el.id = "jErr"; el.className = "err"; el.setAttribute("role", "alert"); $("#jform").after(el); } el.textContent = m; el.hidden = !m; }
@@ -850,6 +930,7 @@ $("#jform").addEventListener("submit", e => {
   delete $("#jCost").dataset.touched; $("#jQty").value = 1; prefillCost(); toast("Série ajoutée au journal");
 });
 $("#jr").addEventListener("click", e => {
+  const ed = e.target.closest("[data-jedit]"); if (ed) { const id = ed.dataset.jedit; openJ.has(id) ? openJ.delete(id) : openJ.add(id); renderJr(); applyRO(); return; }
   const q = e.target.closest("[data-quick]"); if (q && isMe()) { quickJr(q.dataset.jid, q.dataset.quick); return; }
   const b = e.target.closest("[data-jdel]"); if (!b || !isMe()) return;
   if (b.dataset.armed) { Store.delJr(b.dataset.jdel); toast("Ligne supprimée"); return; }
@@ -947,6 +1028,10 @@ document.addEventListener("keydown", e => {
     const btn = el.closest?.("tr")?.querySelector(`[data-quick="${k === "b" ? "brise" : "vendu"}"]`); if (btn) { e.preventDefault(); btn.click(); }
   }
 });
+document.querySelectorAll("[data-mk]").forEach(b => b.addEventListener("click", () => { missDirty(); mkSeg = b.dataset.mk; lsSet("mkSeg", mkSeg); renderRes(); applyRO(); }));
+document.querySelectorAll("[data-jf]").forEach(b => b.addEventListener("click", () => { jFilter = b.dataset.jf; lsSet("jFilter", jFilter); renderJr(); applyRO(); }));
+$("#mkItem").addEventListener("change", () => { missDirty(); renderRes(); applyRO(); });
+$("#mkMissing").addEventListener("change", () => { missDirty(); renderRes(); applyRO(); });
 $("#planAll").addEventListener("change", e => { lsSet("planAll", e.target.checked ? "1" : ""); renderCrafts(); applyRO(); });
 ["budget", "maxq", "dropPct"].forEach(k => { const v = lsGet(k); if (v) $("#" + k).value = v; });
 if (lsGet("planAll")) $("#planAll").checked = true;
