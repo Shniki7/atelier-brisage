@@ -29,6 +29,7 @@ let S = blank();                            // données du profil affiché
 let open = new Set(), tab = lsGet("tab") || "dash", rfilter = "";
 let gran = lsGet("gran") || "semaine", ggran = lsGet("ggran") || "semaine", demoOn = true, charts = {};
 const pendingPrix = new Set();
+const pendingJ = new Map();                 // saisies du journal pas encore confirmées par le serveur : id -> {champ: valeur}
 
 function blank() { return { p: {}, prix: {}, maj: {}, rp: {}, rm: {}, rpt: {}, rec: {}, cfg: { taxe: 2, recolte: "hdv" }, suivi: [], journal: [], loaded: false }; }
 function member(uid) { if (!MEMBERS.has(uid)) MEMBERS.set(uid, blank()); return MEMBERS.get(uid); }
@@ -45,10 +46,29 @@ const initials = s => (s || "?").trim().slice(0, 2).toUpperCase();
 // ---------------------------------------------------------------- calculs
 function recipeOf(s) { if (s.r) return s.r.map(o => [o.i, o.q]); const it = ITEMS.get(s.id); return it ? it.ing : []; }
 const taxe = (M = S) => Math.min(50, Math.max(0, +(M.cfg?.taxe ?? 2))) / 100;
-function unitPrice(rid, M = S) {
-  if (M.rec?.[rid] && M.cfg?.recolte === "gratuit") return 0;
-  const p = M.prix[rid]; return p > 0 ? p : null;
+const GROUP_DAYS = 14;
+const ageDays = d => { const x = pD(d); return x ? Math.floor((Date.now() - x) / 864e5) : 1e9; };
+function median(a) { if (!a.length) return null; const b = [...a].sort((x, y) => x - y), m = b.length >> 1; return b.length % 2 ? b[m] : (b[m - 1] + b[m]) / 2; }
+// Prix proposé par le groupe : médiane des prix saisis par les autres membres du même serveur ces 14 derniers jours
+function groupPrice(field, dateField, id, M = S) {
+  const srv = norm(M.p?.serveur || ""); const vals = [];
+  for (const [, m] of MEMBERS) {
+    if (m === M) continue;
+    if (srv && m.p?.serveur && norm(m.p.serveur) !== srv) continue;
+    const v = +m[field]?.[id]; if (v > 0 && ageDays(m[dateField]?.[id]) <= GROUP_DAYS) vals.push(v);
+  }
+  return vals.length ? { v: Math.round(median(vals)), n: vals.length } : null;
 }
+function priceInfo(rid, M = S) {
+  if (M.rec?.[rid] && M.cfg?.recolte === "gratuit") return { v: 0, src: "récolte" };
+  const p = +M.prix[rid]; if (p > 0) return { v: p, src: "moi" };
+  const g = groupPrice("prix", "maj", rid, M); return g ? { v: g.v, src: "groupe", n: g.n } : { v: null, src: null };
+}
+function runePriceInfo(a, M = S) {
+  const p = +M.rp?.[a]; if (p > 0) return { v: p, src: "moi" };
+  const g = groupPrice("rp", "rm", a, M); return g ? { v: g.v, src: "groupe", n: g.n } : { v: null, src: null };
+}
+function unitPrice(rid, M = S) { return priceInfo(rid, M).v; }
 function costOf(s, M = S) {
   const r = recipeOf(s); let c = 0, miss = 0;
   for (const [id, q] of r) { const p = unitPrice(id, M); if (p == null) miss++; else c += p * q; }
@@ -65,8 +85,8 @@ function runeLines(s, M = S) {
     const [nom, poids, ptsDef] = st; const pts = +M.rpt?.[a] || ptsDef;
     const jet = (lo + hi) / 2;
     const runes = (jet * poids * it.l * 0.015 + 1) * coef / (pts * poids);
-    const prix = M.rp?.[a] > 0 ? +M.rp[a] : null;
-    return { a, nom, lo, hi, jet, pts, runes, prix, val: prix != null ? runes * prix : null };
+    const pi = runePriceInfo(a, M), prix = pi.v;
+    return { a, nom, lo, hi, jet, pts, runes, prix, psrc: pi.src, pn: pi.n, val: prix != null ? runes * prix : null };
   }).filter(Boolean);
 }
 function estBrk(s, M = S) {
@@ -187,8 +207,7 @@ function subscribeMember(uid) {
     const d = snap.data() || {}; m.suivi = (d.items || []).map(x => ({ ...x })); render();
   }, onErr));
   unsubs.push(base.collection("journal").onSnapshot(snap => {
-    const act = uid === ME ? document.activeElement?.dataset?.j : null;
-    m.journal = snap.docs.map(d => act === d.id ? (m.journal.find(j => j._id === act) || { _id: d.id, ...d.data() }) : ({ _id: d.id, ...d.data() }));
+    m.journal = snap.docs.map(d => ({ _id: d.id, ...d.data(), ...(uid === ME ? pendingJ.get(d.id) || {} : {}) }));
     render();
   }, onErr));
 }
@@ -210,7 +229,15 @@ const Store = {
   savePrix() { if (!isMe()) return; pendingPrix.clear(); db.doc(`profiles/${ME}/data/prix`).set({ p: { ...S.prix }, m: { ...S.maj }, rp: { ...S.rp }, rm: { ...S.rm }, rpt: { ...S.rpt }, r: { ...S.rec }, cfg: { ...S.cfg } }).catch(fail); },
   saveSuivi() { if (!isMe()) return; timers.suivi = null; db.doc(`profiles/${ME}/data/suivi`).set({ items: S.suivi.map(x => ({ ...x })) }).catch(fail); },
   addJr(e) { if (!isMe()) return; db.collection(`profiles/${ME}/journal`).add(e).catch(fail); },
-  updJr(id, patch) { if (!isMe()) return; db.doc(`profiles/${ME}/journal/${id}`).update(patch).catch(fail); },
+  updJr(id, patch) {
+    if (!isMe()) return;
+    pendingJ.set(id, { ...(pendingJ.get(id) || {}), ...patch });
+    db.doc(`profiles/${ME}/journal/${id}`).update(patch).then(() => {
+      const p = pendingJ.get(id); if (!p) return;
+      for (const k of Object.keys(patch)) if (p[k] === patch[k]) delete p[k];
+      if (!Object.keys(p).length) pendingJ.delete(id);
+    }).catch(fail);
+  },
   delJr(id) { if (!isMe()) return; db.doc(`profiles/${ME}/journal/${id}`).delete().catch(fail); }
 };
 function saveSuiviLater() { clearTimeout(timers.suivi); timers.suivi = setTimeout(() => Store.saveSuivi(), 600); }
@@ -298,6 +325,11 @@ function stableOrder(key, rows, idOf, cmp) {
   return rows;
 }
 
+// ----- cases de prix : mon prix, prix du groupe (gris, à confirmer), récolte, ou manquant (orange)
+const phCls = (pi, own) => own > 0 ? "" : pi.src === "groupe" ? "grp" : pi.src === "récolte" ? "" : "miss";
+const phTxt = pi => pi.src === "groupe" ? fmt(pi.v) : pi.src === "récolte" ? "0 (récoltée)" : "prix";
+const phTitle = pi => pi.src === "groupe" ? `Prix proposé par le groupe : médiane de ${pi.n || "plusieurs"} membre(s) de ton serveur, saisi(s) ces ${GROUP_DAYS} derniers jours. Tape ton propre prix pour le remplacer.` : pi.src === "moi" ? "Ton prix" : "";
+
 // ----- Crafts suivis
 function renderCrafts() {
   const rows = stableOrder("crafts", S.suivi.map(s => ({ s, it: ITEMS.get(s.id), ...statsOf(s) })), r => r.s.id, (a, b) => (b.roi ?? -1e9) - (a.roi ?? -1e9));
@@ -326,10 +358,10 @@ function renderCrafts() {
           <header><span class="dc-t"><span class="dc-ic">−</span>Recette · ce que tu dépenses</span><span class="dc-v">${costTxt}</span></header>
           <div class="recipe">
           <div class="rrow rhead"><span>Ressource</span><span style="text-align:right">Qté</span><span style="text-align:right">Prix unitaire</span><span style="text-align:right">Sous-total</span><span></span></div>
-          ${rec.map(([rid, q], k) => { const p = S.prix[rid], u = unitPrice(rid); const free = S.rec[rid] && S.cfg.recolte === "gratuit"; return `<div class="rrow">
+          ${rec.map(([rid, q], k) => { const p = S.prix[rid], pi = priceInfo(rid), u = pi.v; const free = pi.src === "récolte"; return `<div class="rrow">
             <span class="rn">${esc(D.res[rid] || "Ressource " + rid)}${S.rec[rid] ? ' <span class="tag">récoltée</span>' : ""}</span>
             <input class="num" id="q-${r.s.id}-${rid}" data-rq="${r.s.id}" data-k="${k}" data-col="rq-${r.s.id}" type="number" min="1" value="${q}" aria-label="Quantité">
-            <input class="num ${p > 0 || free ? "" : "miss"}" id="p-${r.s.id}-${rid}" data-price="${rid}" data-col="pp-${r.s.id}" type="number" min="0" value="${p || ""}" placeholder="${free ? "0 (récoltée)" : "prix"}" aria-label="Prix de ${esc(D.res[rid] || "")}">
+            <input class="num ${phCls(pi, p)}" id="p-${r.s.id}-${rid}" data-price="${rid}" data-col="pp-${r.s.id}" type="number" min="0" value="${p || ""}" placeholder="${phTxt(pi)}" title="${phTitle(pi)}" aria-label="Prix de ${esc(D.res[rid] || "")}">
             <span class="st">${u != null ? fmt(u * q) : "–"}</span>
             <button class="ghost x" data-rdel="${r.s.id}" data-k="${k}" aria-label="Retirer l'ingrédient" title="Retirer l'ingrédient">×</button></div>`; }).join("")}
           <div class="rfoot"><span class="note">Coût : ${r.miss ? (r.cost ? `au moins <b class="mono">${fmt(r.cost)}</b>` : "inconnu") + ` · ${r.miss} prix manquant${r.miss > 1 ? "s" : ""}` : `<b class="mono">${fmt(r.cost)}</b>`}</span>
@@ -340,7 +372,7 @@ function renderCrafts() {
             <div class="rrow runes rhead"><span>Rune obtenue (jet moyen)</span><span style="text-align:right">Runes</span><span style="text-align:right">Prix rune</span><span style="text-align:right">Valeur</span></div>
             ${r.est.lines.map(l => `<div class="rrow runes"><span class="rn">${esc(l.nom)} <span class="note">${l.lo === l.hi ? l.lo : l.lo + "–" + l.hi}${l.pts > 1 ? ` · ${l.pts} pts/rune` : ""}</span></span>
               <span class="st">${l.runes.toLocaleString("fr-FR", { maximumFractionDigits: 1 })}</span>
-              <input class="num ${l.prix ? "" : "miss"}" id="rup-${r.s.id}-${l.a}" data-runep="${l.a}" data-col="rup-${r.s.id}" type="number" min="0" value="${l.prix || ""}" placeholder="prix" aria-label="Prix de la rune ${esc(l.nom)}">
+              <input class="num ${phCls({ v: l.prix, src: l.psrc }, S.rp[l.a])}" id="rup-${r.s.id}-${l.a}" data-runep="${l.a}" data-col="rup-${r.s.id}" type="number" min="0" value="${S.rp[l.a] || ""}" placeholder="${phTxt({ v: l.prix, src: l.psrc })}" title="${phTitle({ v: l.prix, src: l.psrc, n: l.pn })}" aria-label="Prix de la rune ${esc(l.nom)}">
               <span class="st">${l.val != null ? fmt(l.val) : "–"}</span></div>`).join("")}
             <div class="rfoot"><span class="note">${r.est.val
               ? `Brisage estimé : <b class="mono">${fmt(r.est.val)}</b> au coefficient ${r.s.coef ?? 100} %${tx ? `, soit <b class="mono">${fmt(r.est.val * (1 - tx))}</b> après ${Math.round(tx * 1000) / 10} % de taxe` : ""}.`
@@ -382,18 +414,18 @@ function renderRes() {
   const list = stableOrder("res", neededRes().map(([rid, its]) => ({ rid, its, n: D.res[rid] || "Ressource " + rid })).filter(x => !f || norm(x.n).includes(f)), x => x.rid,
     (a, b) => ((unitPrice(a.rid) != null) - (unitPrice(b.rid) != null)) || a.n.localeCompare(b.n, "fr"));
   keepFocus(() => {
-    $("#runes").innerHTML = runes.length ? runes.map(x => { const p = S.rp[x.a]; return `<tr>
+    $("#runes").innerHTML = runes.length ? runes.map(x => { const p = S.rp[x.a], pi = runePriceInfo(x.a); return `<tr>
       <td class="l"><b>Rune ${esc(x.st[0])}</b><small class="note" style="display:block">poids ${x.st[1]}</small></td>
       <td class="l note">${esc([...new Set(x.its)].slice(0, 4).join(", "))}${new Set(x.its).size > 4 ? "…" : ""}</td>
       <td><input class="num" id="rpt-${x.a}" data-runepts="${x.a}" data-col="rpt" type="number" min="1" value="${S.rpt[x.a] || x.st[2]}" aria-label="Points apportés par une rune ${esc(x.st[0])}" style="width:80px"></td>
-      <td><input class="num ${p > 0 ? "" : "miss"}" id="rup-${x.a}" data-runep="${x.a}" data-col="rup" type="number" min="0" value="${p || ""}" placeholder="prix" aria-label="Prix de la rune ${esc(x.st[0])}"></td>
-      <td class="m note">${fdate(S.rm[x.a])}</td></tr>`; }).join("")
+      <td><input class="num ${phCls(pi, p)}" id="rup-${x.a}" data-runep="${x.a}" data-col="rup" type="number" min="0" value="${p || ""}" placeholder="${phTxt(pi)}" title="${phTitle(pi)}" aria-label="Prix de la rune ${esc(x.st[0])}"></td>
+      <td class="m note">${p > 0 ? fdate(S.rm[x.a]) : pi.src === "groupe" ? `<span class="grp-tag">groupe</span>` : "–"}</td></tr>`; }).join("")
       : `<tr><td colspan="5" class="empty">${S.suivi.length ? "Aucune rune ne correspond au filtre." : "Ajoute des items dans « Crafts suivis » pour voir les runes qu'ils donnent."}</td></tr>`;
-    $("#res").innerHTML = list.length ? list.map(x => { const p = S.prix[x.rid], rc = !!S.rec[x.rid], free = rc && S.cfg.recolte === "gratuit"; return `<tr>
+    $("#res").innerHTML = list.length ? list.map(x => { const p = S.prix[x.rid], rc = !!S.rec[x.rid], pi = priceInfo(x.rid); return `<tr>
       <td class="l"><b>${esc(x.n)}</b></td><td class="l note">${esc([...new Set(x.its)].join(", "))}</td>
       <td><label class="chk"><input type="checkbox" id="rec-${x.rid}" data-rec="${x.rid}" ${rc ? "checked" : ""} aria-label="Je récolte ${esc(x.n)}"><span>récoltée</span></label></td>
-      <td><input class="num ${p > 0 || free ? "" : "miss"}" id="rp-${x.rid}" data-price="${x.rid}" data-col="rp" type="number" min="0" value="${p || ""}" placeholder="${free ? "0 (récoltée)" : "prix"}" aria-label="Prix de ${esc(x.n)}"></td>
-      <td class="m note">${fdate(S.maj[x.rid])}</td></tr>`; }).join("")
+      <td><input class="num ${phCls(pi, p)}" id="rp-${x.rid}" data-price="${x.rid}" data-col="rp" type="number" min="0" value="${p || ""}" placeholder="${phTxt(pi)}" title="${phTitle(pi)}" aria-label="Prix de ${esc(x.n)}"></td>
+      <td class="m note">${p > 0 ? fdate(S.maj[x.rid]) : pi.src === "groupe" ? `<span class="grp-tag">groupe</span>` : "–"}</td></tr>`; }).join("")
       : `<tr><td colspan="5" class="empty">${S.suivi.length ? "Aucune ressource ne correspond au filtre." : "Ajoute des items dans « Crafts suivis » pour voir les ressources à acheter."}</td></tr>`;
   });
   $("#cRunes").textContent = runes.length;
@@ -425,11 +457,13 @@ function renderJr() {
   const done = J.filter(e => realize(e)), run = J.filter(e => !realize(e));
   const inv = done.reduce((a, e) => a + (+e.cout || 0), 0), rn = done.reduce((a, e) => a + realize(e).ventes, 0);
   const stock = run.reduce((a, e) => a + (+e.cout || 0), 0);
-  $("#jtot").innerHTML = `<div class="tot"><span>Investi (réalisé)</span><b>${fmt(inv)}</b></div>
-    <div class="tot"><span>Ventes</span><b>${fmt(rn)}</b></div>
-    <div class="tot big"><span>Bénéfice réel</span><b>${fmt(rn - inv)}</b></div>
-    <div class="tot"><span>Rendement réel</span><b>${inv ? pillTxt((rn - inv) / inv) : "–"}</b></div>
-    <div class="tot"><span>En stock</span><b>${fmt(stock)}</b></div>`;
+  $("#jtot").innerHTML = `<div class="tot"><span>Investi au total</span><b>${fmt(inv + stock)}</b></div>
+    <div class="tot"><span>En attente de brisage</span><b>${fmt(stock)}</b><small class="note">${run.length} série(s)</small></div>
+    <div class="tot"><span>Ventes / runes</span><b>${fmt(rn)}</b><small class="note">${done.length} série(s) brisée(s) ou vendue(s)</small></div>
+    <div class="tot big"><span>Bénéfice réalisé</span><b>${done.length ? fmt(rn - inv) : "–"}</b></div>
+    <div class="tot"><span>Rendement réalisé</span><b>${inv ? pillTxt((rn - inv) / inv) : "–"}</b></div>`;
+  $("#jHint").hidden = !(run.length && isMe());
+  $("#jHint").innerHTML = `<b>${run.length} série${run.length > 1 ? "s" : ""} en stock.</b> Une série ne compte dans le bénéfice qu'une fois brisée : clique <b>Brisé</b> (ou saisis la date et la valeur des runes), puis <b>Vendu</b> quand tu as encaissé.`;
   const arr = byItem(done);
   $("#realPanel").hidden = !arr.length;
   $("#real").innerHTML = arr.map(o => `<tr><td class="l"><b>${esc(o.k)}</b></td><td class="m">${o.n}</td><td class="m">${fmt(o.inv)}</td><td class="m">${fmt(o.rn)}</td><td class="m ${o.rn - o.inv < 0 ? "neg" : "pos"}">${fmt(o.rn - o.inv)}</td><td>${o.roi != null ? `<span class="pill ${pillCls(o.roi)}">${pillTxt(o.roi)}</span>` : ""}</td></tr>`).join("");
@@ -693,7 +727,8 @@ document.addEventListener("input", e => {
   if (t.dataset.j) {
     const f = t.dataset.f; const v = (f === "achat" || f === "brisage" || f === "vente") ? t.value : (+t.value || 0);
     const e0 = S.journal.find(j => j._id === t.dataset.j); if (e0) e0[f] = v;
-    later("j" + t.dataset.j + f, () => Store.updJr(t.dataset.j, { [f]: v }), 500); return;
+    pendingJ.set(t.dataset.j, { ...(pendingJ.get(t.dataset.j) || {}), [f]: v });   // protégé tout de suite
+    later("j" + t.dataset.j + f, () => Store.updJr(t.dataset.j, { [f]: v }), 400); return;
   }
   if (t.id === "jQty" && !$("#jCost").dataset.touched) prefillCost();
   if (t.id === "jCost") t.dataset.touched = "1";

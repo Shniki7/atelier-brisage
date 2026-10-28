@@ -338,6 +338,13 @@ kbd{font-family:var(--mono);font-size:11.5px;background:var(--surface-2);border:
 .keys .kh{grid-column:1/-1;font-size:11px;text-transform:uppercase;letter-spacing:.07em;color:var(--muted);font-weight:600;margin-top:6px}
 .modal-card{max-height:90vh;overflow:auto}
 
+input.grp{background:var(--surface-2);border-style:dashed}
+input.grp::placeholder{color:var(--fg-2);opacity:.85}
+.grp-tag{font-family:var(--body);font-size:10.5px;font-weight:600;color:var(--accent);background:var(--accent-soft);border-radius:4px;padding:1px 6px}
+.tot small{display:block;margin-top:2px;font-size:11.5px}
+.hint{margin:0;font-size:13px;background:var(--accent-soft);color:var(--fg-2);border-radius:8px;padding:9px 12px}
+.hint b{color:var(--fg)}
+
 /* ---------- lecture seule ---------- */
 body.ro .own-only{display:none!important}
 
