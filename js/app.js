@@ -79,7 +79,8 @@ function costOf(s, M = S) {
 // poids d'une rune de base = points apportés par la rune × poids de la carac
 function runeLines(s, M = S) {
   const it = ITEMS.get(s.id), fx = D.fx?.[s.id]; if (!it || !fx) return [];
-  const coef = Math.max(0, +(s.coef ?? 100) || 0) / 100;
+  if (s.coef == null || s.coef === "") return null; // coefficient pas encore saisi : pas d'estimation
+  const coef = Math.max(0, +s.coef || 0) / 100;
   return fx.map(([a, lo, hi]) => {
     const st = D.stats[a]; if (!st) return null;
     const [nom, poids, ptsDef] = st; const pts = +M.rpt?.[a] || ptsDef;
@@ -90,7 +91,9 @@ function runeLines(s, M = S) {
   }).filter(Boolean);
 }
 function estBrk(s, M = S) {
-  const L = runeLines(s, M); if (!L.length) return { val: null, miss: 0, none: true, lines: L };
+  const L = runeLines(s, M);
+  if (L === null) return { val: null, miss: 0, part: 0, needCoef: true, lines: [] };
+  if (!L.length) return { val: null, miss: 0, none: true, lines: L };
   const miss = L.filter(l => l.prix == null).length; const part = L.reduce((a, l) => a + (l.val || 0), 0);
   // trier les runes : d'abord celles qui pèsent le plus (valeur connue, sinon nombre de runes × poids)
   L.sort((x, y) => (y.val ?? -1) - (x.val ?? -1) || (y.runes * y.pts) - (x.runes * x.pts));
@@ -219,6 +222,12 @@ function subscribeMember(uid) {
       if (date) nx[date][id] = m[date][id];
     }
     Object.assign(m, nx); m.loaded = true; render();
+  }, onErr));
+  if (uid === ME) unsubs.push(base.collection("data").doc("panier").onSnapshot(snap => {
+    let items = (snap.data() || {}).items || [];
+    // reprise d'un panier gardé dans le navigateur (ancienne version)
+    if (!snap.exists) { try { const old = JSON.parse(lsGet("cart-" + ME) || "[]"); if (old.length) { items = old; base.collection("data").doc("panier").set({ items }).catch(fail); } } catch (e) { } }
+    lsSet("cart-" + ME, ""); m.cart = items.map(x => ({ ...x })); if (tab === "home") renderHome();
   }, onErr));
   unsubs.push(base.collection("data").doc("suivi").onSnapshot(snap => {
     if (uid === ME && timers.suivi) return; // modification locale en attente d'enregistrement
@@ -405,7 +414,7 @@ function missingFor(s, st) {
   // ce qu'il manque pour avoir au moins une option chiffrée
   const out = [];
   if (st.miss) out.push({ seg: "res", txt: `${st.miss} prix de ressource${st.miss > 1 ? "s" : ""}` });
-  if (!st.brk && !(+s.pv > 0)) out.push(st.est.none ? { seg: "items", txt: "valeur de brisage ou de revente" } : { seg: "runes", txt: `${st.est.miss} prix de rune${st.est.miss > 1 ? "s" : ""}` });
+  if (!st.brk && !(+s.pv > 0)) out.push(st.est.none ? { seg: "items", txt: "valeur de brisage ou de revente" } : st.est.needCoef ? { seg: "items", txt: "coefficient de brisage" } : { seg: "runes", txt: `${st.est.miss} prix de rune${st.est.miss > 1 ? "s" : ""}` });
   return out;
 }
 function realOf(itemId, M = S) {
@@ -446,7 +455,6 @@ function renderCrafts() {
       return html;
     }).join("") : `<tr><td colspan="8" class="empty">${isMe() ? "Aucun item suivi. Cherche un item ci-dessus pour le suivre (raccourci : /)." : "Ce membre ne suit encore aucun item."}</td></tr>`;
   });
-  renderPlan(rows);
 }
 function oppDetail(r, rel) {
   const tx = taxe(); const real = realOf(r.s.id);
@@ -466,8 +474,8 @@ function oppDetail(r, rel) {
         ${r.s.r ? `<p class="note" style="padding:0 14px 12px">Recette modifiée à la main. <button class="linkish own-only" data-rreset="${r.s.id}" type="button">Revenir à la recette du jeu</button></p>` : ""}
       </section>
       <section class="dcard d-out"><header><span class="dc-t"><span class="dc-ic">+</span>Brisage : les runes</span><span class="dc-v">${+r.s.brk > 0 ? fmt(r.s.brk) + " (saisi)" : r.est.val ? fmt(r.est.val) : r.est.part ? "≥ " + fmt(r.est.part) : "?"}</span></header>
-        ${r.est.lines.length ? `<ul class="kv">${r.est.lines.map(l => `<li><span>${l.runes.toLocaleString("fr-FR", { maximumFractionDigits: 1 })} × rune ${esc(l.nom)}${l.psrc === "groupe" ? ' <span class="grp-tag">groupe</span>' : ""}</span><b class="mono">${l.val != null ? fmt(l.val) : '<span class="miss-t">prix ?</span>'}</b></li>`).join("")}</ul>
-        <p class="note" style="padding:0 14px 12px">Au coefficient ${r.s.coef ?? 100} %, avec le jet moyen de chaque caractéristique. ${+r.s.brk > 0 ? "Tu as saisi une valeur de brisage : elle remplace cette estimation." : "Estimation par formule : compare-la à ton premier vrai brisage."}</p>`
+        ${r.est.lines.length || r.est.needCoef ? `<ul class="kv">${r.est.lines.map(l => `<li><span>${l.runes.toLocaleString("fr-FR", { maximumFractionDigits: 1 })} × rune ${esc(l.nom)}${l.psrc === "groupe" ? ' <span class="grp-tag">groupe</span>' : ""}</span><b class="mono">${l.val != null ? fmt(l.val) : '<span class="miss-t">prix ?</span>'}</b></li>`).join("")}</ul>
+        <p class="note" style="padding:0 14px 12px">${r.est.needCoef ? "Saisis le coefficient de brisage affiché en jeu (Prix du marché › Items) pour estimer les runes." : `Au coefficient ${r.s.coef} %, avec le jet moyen de chaque caractéristique.`} ${+r.s.brk > 0 ? "Tu as saisi une valeur de brisage : elle remplace cette estimation." : "Estimation par formule : compare-la à ton premier vrai brisage."}</p>`
         : `<p class="note" style="padding:12px 14px">Pas d'effets connus : saisis sa valeur de brisage dans Prix du marché › Items.</p>`}
       </section>
     </div>
@@ -507,44 +515,9 @@ function greedyPlan(cands, budget, maxq, drop) {
   }
   return ben;
 }
-let allCache = null;
-function allKnownItems() {
-  // tous les items du jeu dont les prix (ressources + runes) sont connus, au coefficient 100 %
-  const key = JSON.stringify([S.prix, S.rp, S.rec, S.cfg, S.rpt, MEMBERS.size, S.suivi.length]);
-  if (allCache && allCache.key === key) return allCache.list;
-  const tracked = new Set(S.suivi.map(x => x.id)); const list = [];
-  for (const it of D.items) {
-    if (tracked.has(it.id) || !D.fx?.[it.id]) continue;
-    const s = { id: it.id, coef: 100, brk: 0 }; const st = statsOf(s);
-    if (st.ok && st.benef > 0) list.push({ s, it, ...st, untracked: true });
-  }
-  allCache = { key, list }; return list;
-}
-function renderPlan(rows) {
-  // mêmes kamas que la page « Mes kamas » : le total, moins ce qui est déjà engagé dans des séries en cours
-  const engaged = isMe() ? S.journal.filter(e => !(+e.encaisse > 0)).reduce((x, e) => x + (+e.cout || 0), 0) : 0;
-  const budget = Math.max(0, (+$("#budget").value || 0) - engaged), maxq = Math.max(1, Math.min(50, Math.floor(+$("#maxq").value || 1)));
-  const drop = Math.min(50, Math.max(0, +$("#dropPct").value || 0)) / 100, all = $("#planAll").checked;
-  let cands = rows.filter(r => r.ok && r.benef > 0);
-  if (all) cands = cands.concat(allKnownItems());
-  cands = cands.map(r => ({ ...r, cost: r.best.in, brk: r.best.out }));
-  const { picks, inv, ben } = optimizePlan(cands, budget, maxq, drop);
-  const simple = greedyPlan(cands, budget, maxq, drop);
-  $("#plan").innerHTML = picks.length ? picks.map(p => `<tr>
-      <td class="l"><b>${esc(p.it.n)}</b>${p.untracked ? ` <span class="grp-tag">non suivi</span>` : ""}</td>
-      <td class="l">${stratTxt(p.best)}</td><td class="m"><b>${p.q}</b></td><td class="m">${fmt(p.q * p.cost)}</td><td class="m pos"><b>+${fmt(p.gain)}</b></td>
-      <td class="acts"><button class="ghost own-only" data-launch="${p.it.id}" data-q="${p.q}" type="button" title="Enregistrer cette série">Lancer</button>${p.untracked ? `<button class="ghost own-only follow" data-follow="${p.it.id}" type="button">Suivre</button>` : ""}</td></tr>`).join("")
-    : `<tr><td colspan="6" class="empty">${cands.length ? `Ton budget (${fmt(budget)}) ne suffit pas : l'option rentable la moins chère coûte ${fmt(Math.min(...cands.map(c => c.cost)))}.` : S.suivi.length ? "Aucune option rentable pour l'instant : complète les prix de tes items (bouton « Compléter » ci-dessous)." : "Suis quelques items ci-dessous, puis renseigne leurs prix."}</td></tr>`;
-  $("#tInv").textContent = fmt(inv); $("#tBen").textContent = (ben > 0 ? "+" : "") + fmt(ben); $("#tLeft").textContent = fmt(budget - inv);
-  $("#tRoi").textContent = inv ? pillTxt(ben / inv) : "–";
-  $("#planGain").hidden = !(picks.length && ben - simple > Math.max(1, ben * 0.005));
-  $("#planGain").innerHTML = `Cette combinaison rapporte <b>${fmt(ben - simple)}</b> de plus que de prendre les items par ordre de rendement.`;
-  $("#planInfo").textContent = (engaged ? `Kamas disponibles : ${fmt(budget)} (${fmt(engaged)} déjà engagés dans tes séries en cours). ` : "") + (cands.length ? `Calculé parmi ${cands.length} item${cands.length > 1 ? "s" : ""} rentable${cands.length > 1 ? "s" : ""}${all ? ` (dont ${allKnownItems().length} que tu ne suis pas, comptés au coefficient 100 %)` : ""}. Au plus ${maxq} exemplaire${maxq > 1 ? "s" : ""} par item pour ne pas faire chuter le coefficient ou le prix.` : "");
-}
-
 // ----- Aujourd'hui : le cycle Préparer → Décider → Exécuter → Analyser
 function planFor(rows, forced) {
-  const budget = forced != null ? forced : Math.max(0, +(lsGet("budget") || $("#budget").value) || 0), maxq = Math.max(1, Math.min(50, Math.floor(+(lsGet("maxq") || $("#maxq").value) || 1)));
+  const budget = forced != null ? forced : Math.max(0, +lsGet("budget") || 0), maxq = Math.max(1, Math.min(50, Math.floor(+(lsGet("maxq") || $("#maxq").value) || 1)));
   const drop = Math.min(50, Math.max(0, +(lsGet("dropPct") || 0))) / 100;
   const cands = rows.filter(r => r.ok && r.benef > 0).map(r => ({ ...r, cost: r.best.in, brk: r.best.out }));
   return { budget, ...optimizePlan(cands, budget, maxq, drop) };
@@ -566,7 +539,7 @@ let homePer = lsGet("homePer") || "mois";
 function renderHome() {
   const c = cycleState(), me = isMe();
   // 1. mes kamas
-  const cap = Math.max(0, +(lsGet("budget") || $("#budget").value) || 0);
+  const cap = Math.max(0, +lsGet("budget") || 0);
   if (document.activeElement !== $("#homeCap")) $("#homeCap").value = cap || "";
   const engaged = c.open.reduce((a, e) => a + (+e.cout || 0), 0), free = Math.max(0, cap - engaged);
   $("#homeCapKv").innerHTML = `<li><span>Déjà engagés (en cours)</span><b class="mono">${fmt(engaged)}</b></li><li><span>Encore disponibles</span><b class="mono">${fmt(free)}</b></li>`;
@@ -603,11 +576,11 @@ function renderHome() {
     <li><span></span><button class="linkish" data-goto="dash" type="button">Voir les graphiques</button></li>`;
 }
 // ----- panier : la liste de ce que je veux faire, avant de lancer les séries
-const cartKey = () => "cart-" + ME;
-function cartGet() { try { return JSON.parse(lsGet(cartKey()) || "[]"); } catch (e) { return []; } }
-function cartSet(c) { lsSet(cartKey(), JSON.stringify(c)); }
+// enregistré dans le profil (data/panier) : on le retrouve sur n'importe quel PC
+function cartGet() { return (member(ME).cart || []).map(x => ({ ...x })); }
+function cartSet(c) { member(ME).cart = c; db.doc(`profiles/${ME}/data/panier`).set({ items: c }).catch(fail); }
 function cartLine(l) {
-  const s = S.suivi.find(x => x.id === l.id) || { id: l.id, coef: 100, brk: 0 }, st = statsOf(s);
+  const s = S.suivi.find(x => x.id === l.id) || { id: l.id, brk: 0 }, st = statsOf(s);
   const o = st.opts.find(x => x.k === l.k) || st.best || st.opts[0];
   return { ...l, it: ITEMS.get(l.id), st, o, inv: o.in != null ? o.in * l.q : null, back: o.out != null ? o.out * l.q : null };
 }
@@ -631,7 +604,7 @@ function renderCart(free) {
       <td class="l"><select data-cart-k="${x.id}" aria-label="Moyen pour ${esc(x.it.n)}">${STRATS.map(o => `<option value="${o.k}" ${o.k === x.o.k ? "selected" : ""}>${stratTxt(o)}</option>`).join("")}</select></td>
       <td><input class="num" id="cq-${x.id}" data-cart-q="${x.id}" data-col="cq" type="number" min="1" value="${x.q}" aria-label="Quantité de ${esc(x.it.n)}" style="width:70px"></td>
       <td class="m">${x.inv != null ? fmt(x.inv) : `<button class="linkish miss-t" data-fixm="${x.id}" data-seg="${x.o.src === "achat" ? "items" : "res"}" type="button">prix ?</button>`}</td>
-      <td class="m">${x.back != null ? fmt(x.back) : `<button class="linkish miss-t" data-fixm="${x.id}" data-seg="${x.o.dest === "revente" ? "items" : "runes"}" type="button">prix ?</button>`}</td>
+      <td class="m">${x.back != null ? fmt(x.back) : (x.o.dest === "brisage" && x.st.est.needCoef && !(+x.st.brk > 0) ? `<button class="linkish miss-t" data-fixm="${x.id}" data-seg="items" type="button" title="Saisis le coefficient de brisage affiché en jeu">coef ?</button>` : `<button class="linkish miss-t" data-fixm="${x.id}" data-seg="${x.o.dest === "revente" ? "items" : "runes"}" type="button">prix ?</button>`)}</td>
       <td class="m">${x.inv != null && x.back != null ? `<b class="${x.back - x.inv < 0 ? "neg" : "pos"}">${x.back - x.inv > 0 ? "+" : ""}${fmt(x.back - x.inv)}</b>` : "–"}</td>
       <td class="acts"><button class="ghost x" data-cart-del="${x.id}" type="button" aria-label="Retirer ${esc(x.it.n)} du panier">×</button></td></tr>`).join("")
     : `<tr><td class="empty">Ton panier est vide. Cherche un item ci-dessus, ou ouvre les idées en dessous.</td></tr>`;
@@ -640,7 +613,7 @@ function renderCart(free) {
     <div class="tot"><span>J'engage</span><b>${fmt(T.inv)}</b></div>
     <div class="tot"><span>Il me restera</span><b class="${left < 0 ? "neg" : ""}">${fmt(left)}</b></div>
     <div class="tot big"><span>Je gagne</span><b style="color:${gain < 0 ? "var(--bad)" : "var(--good)"}">${gain > 0 ? "+" : ""}${fmt(gain)}</b></div>
-    <div class="cart-go">${T.unknown.length ? `<small class="note">${T.unknown.length} ligne${T.unknown.length > 1 ? "s" : ""} sans prix : clique « prix ? » pour compléter.</small>` : left < 0 ? `<small class="neg">Le panier dépasse tes kamas disponibles.</small>` : ""}
+    <div class="cart-go">${T.unknown.length ? `<small class="note">${T.unknown.length} ligne${T.unknown.length > 1 ? "s" : ""} incomplète${T.unknown.length > 1 ? "s" : ""} : clique « prix ? » ou « coef ? » pour compléter.</small>` : left < 0 ? `<small class="neg">Le panier dépasse tes kamas disponibles.</small>` : ""}
       <button class="primary" type="button" id="cartGo" ${T.unknown.length ? "disabled" : ""}>Lancer le panier</button></div>` : "";
 }
 $("#cq").addEventListener("input", e => {
@@ -675,7 +648,7 @@ document.addEventListener("click", e => {
     cartSet([]); toast(`${T.L.length} série${T.L.length > 1 ? "s" : ""} lancée${T.L.length > 1 ? "s" : ""} : elles sont dans « En cours »`); renderHome();
   }
 });
-$("#homeCap").addEventListener("change", e => { const v = Math.max(0, +e.target.value || 0); lsSet("budget", String(v)); $("#budget").value = v; deferRender(); });
+$("#homeCap").addEventListener("change", e => { const v = Math.max(0, +e.target.value || 0); lsSet("budget", String(v)); deferRender(); });
 document.addEventListener("click", e => { const b = e.target.closest("[data-hp]"); if (!b) return; homePer = b.dataset.hp; lsSet("homePer", homePer); renderHome(); });
 
 // ----- Familiers : XP par ressource (moi > groupe > guide) et coût pour atteindre un niveau
@@ -793,7 +766,7 @@ function renderRes() {
       <td class="l"><b>${esc(nm)}</b><small class="note" style="display:block">${x.st.best ? "Meilleur choix : " + stratTxt(x.st.best) : "Pas encore chiffré"}</small></td>
       <td><input class="num pr-in" id="pa-${s.id}" data-ipa="${s.id}" data-col="pa" type="number" min="0" value="${s.pa || ""}" placeholder="–" aria-label="Prix d'achat de ${esc(nm)}"></td>
       <td><input class="num pr-in" id="pv-${s.id}" data-ipv="${s.id}" data-col="pv" type="number" min="0" value="${s.pv || ""}" placeholder="–" aria-label="Prix de revente HDV de ${esc(nm)}"></td>
-      <td><input class="num coef-in" id="coef-${s.id}" data-coef="${s.id}" data-col="coef" type="number" min="0" max="4000" value="${s.coef ?? 100}" aria-label="Coefficient de brisage de ${esc(nm)}"></td>
+      <td><input class="num coef-in ${s.coef == null || s.coef === "" ? "miss" : ""}" id="coef-${s.id}" data-coef="${s.id}" data-col="coef" type="number" min="0" max="4000" value="${s.coef ?? ""}" placeholder="?" aria-label="Coefficient de brisage de ${esc(nm)}"></td>
       <td><input class="num pr-in" id="brk-${s.id}" data-brk="${s.id}" data-col="brk" type="number" min="0" value="${s.brk || ""}" placeholder="${x.st.est.val ? "≈ " + fmt(x.st.est.val) : x.st.est.part ? "≥ " + kfmt(x.st.est.part) : "–"}" title="Laisse vide pour utiliser l'estimation à partir des runes" aria-label="Valeur de brisage de ${esc(nm)}"></td></tr>`; }).join("") : empty(5, "items");
   });
 }
@@ -917,8 +890,8 @@ function killChart(k) { if (charts[k]) { charts[k].destroy(); delete charts[k]; 
 
 function renderDash() {
   const real = S.journal.length > 0;
-  const J = real ? S.journal : (isMe() && demoOn ? demoData() : []);
-  $("#demoBanner").hidden = real || !demoOn || !isMe();
+  const J = S.journal; // plus de données d'exemple : uniquement tes vraies séries
+  $("#demoBanner").hidden = true;
   document.querySelectorAll("[data-g]").forEach(b => b.setAttribute("aria-pressed", b.dataset.g === gran));
   const G = GR[gran], now = new Date(), cur = G.start(now);
   const keys = []; for (let k = G.n - 1; k >= 0; k--) keys.push(G.add(cur, -k));
@@ -956,14 +929,14 @@ function drawDashCharts(B, G, J) {
     data: { labels: B.map(b => G.lab(b.d)), datasets: [{ data: B.map(b => Math.round(b.ben)), backgroundColor: B.map(b => b.ben < 0 ? bad : good), hoverBackgroundColor: B.map(b => b.ben < 0 ? bad : good), borderRadius: 5, borderSkipped: "start", maxBarThickness: 30, categoryPercentage: .8, barPercentage: .85 }] },
     options: { responsive: true, maintainAspectRatio: false, animation: anim,
       plugins: { legend: { display: false }, tooltip: { ...tip, callbacks: { title: it => G.full(B[it[0].dataIndex].d), label: it => { const b = B[it.dataIndex]; return [`Bénéfice : ${fmt(b.ben)}`, `Ventes : ${fmt(b.ventes)}`, `Coût : ${fmt(b.cout)}`, `${b.n} série(s)`]; } } } },
-      scales: { x: { grid: { display: false }, ticks: { maxRotation: 0, autoSkipPadding: 10 } }, y: { grid, border: { display: false }, ticks: { padding: 8, callback: v => kfmt(v) } } } } });
+      scales: { x: { grid: { display: false }, ticks: { maxRotation: 0, autoSkipPadding: 10 } }, y: { grid, suggestedMin: 0, suggestedMax: 1000, border: { display: false }, ticks: { padding: 8, precision: 0, callback: v => kfmt(v) } } } } });
   const ev = J.map(e => { const R = realize(e); return R ? { d: R.date, b: R.ventes - (+e.cout || 0) } : null; }).filter(Boolean).sort((a, b) => a.d.localeCompare(b.d));
   const pts = []; let s = 0; for (const x of ev) { s += x.b; if (pts.length && pts[pts.length - 1].d === x.d) pts[pts.length - 1].v = s; else pts.push({ d: x.d, v: s }); }
   charts.cum = new Chart($("#chCum"), { type: "line",
     data: { labels: pts.map(p => pD(p.d).toLocaleDateString("fr-FR", { day: "2-digit", month: "short" })), datasets: [{ data: pts.map(p => Math.round(p.v)), borderColor: acc, borderWidth: 2, pointRadius: 0, pointHoverRadius: 5, pointHoverBackgroundColor: acc, pointHoverBorderColor: bg, pointHoverBorderWidth: 2, tension: .25, fill: { target: "origin", above: hexA(acc, .14), below: hexA(bad, .14) } }] },
     options: { responsive: true, maintainAspectRatio: false, interaction: { mode: "index", intersect: false }, animation: false,
       plugins: { legend: { display: false }, tooltip: { ...tip, callbacks: { title: it => pD(pts[it[0].dataIndex].d).toLocaleDateString("fr-FR", { day: "numeric", month: "long", year: "numeric" }), label: it => "Cumul : " + fmt(it.raw) } } },
-      scales: { x: { grid: { display: false }, ticks: { maxRotation: 0, autoSkipPadding: 24 } }, y: { grid, border: { display: false }, ticks: { padding: 8, callback: v => kfmt(v) } } } } });
+      scales: { x: { grid: { display: false }, ticks: { maxRotation: 0, autoSkipPadding: 24 } }, y: { grid, suggestedMin: 0, suggestedMax: 1000, border: { display: false }, ticks: { padding: 8, precision: 0, callback: v => kfmt(v) } } } } });
 }
 function renderItemBars(J) {
   const arr = byItem(J).slice(0, 8);
@@ -1070,7 +1043,7 @@ function renderGroup() {
   charts.grp = new Chart($("#chGrp"), { type: "line", data: { labels: wk.map(w => w.toLocaleDateString("fr-FR", { day: "2-digit", month: "2-digit" })), datasets: ds },
     options: { responsive: true, maintainAspectRatio: false, animation: anim, interaction: { mode: "index", intersect: false },
       plugins: { legend: { display: false }, tooltip: { ...tip, displayColors: true, boxPadding: 4, callbacks: { title: it => "Semaine du " + wk[it[0].dataIndex].toLocaleDateString("fr-FR", { day: "numeric", month: "long" }), label: it => `${it.dataset.label} : ${fmt(it.raw)}` } } },
-      scales: { x: { grid: { display: false }, ticks: { maxRotation: 0 } }, y: { grid, border: { display: false }, ticks: { padding: 8, callback: v => kfmt(v) } } } } });
+      scales: { x: { grid: { display: false }, ticks: { maxRotation: 0 } }, y: { grid, suggestedMin: 0, suggestedMax: 1000, border: { display: false }, ticks: { padding: 8, precision: 0, callback: v => kfmt(v) } } } } });
 }
 $("#grpRows").addEventListener("click", e => { const tr = e.target.closest("[data-uid]"); if (!tr) return; setView(tr.dataset.uid); setTab("dash"); window.scrollTo({ top: 0, behavior: "smooth" }); });
 document.querySelectorAll("[data-gg]").forEach(b => b.addEventListener("click", () => { ggran = b.dataset.gg; lsSet("ggran", ggran); renderGroup(); }));
@@ -1116,7 +1089,7 @@ function setRunePts(a, v) { pendingPrix.add("rpt:" + a); const n = Math.max(1, M
 function setCfg(k, v) { pendingPrix.add("cfg:"); S.cfg = { ...S.cfg, [k]: v }; later("prix", () => Store.savePrix()); }
 document.addEventListener("input", e => {
   const t = e.target;
-  if (t.id === "budget" || t.id === "maxq" || t.id === "dropPct") { lsSet(t.id, t.value); renderCrafts(); applyRO(); return; }
+  if (t.id === "maxq" || t.id === "dropPct") { lsSet(t.id, t.value); return; }
   if (t.id === "rq") { rfilter = t.value; renderRes(); applyRO(); return; }
   if (!isMe()) return;
   if (t.dataset.price) { setPrice(t.dataset.price, t.value); t.classList.toggle("miss", !(+t.value > 0)); if (tab === "crafts") softCrafts(); return; }
@@ -1124,7 +1097,7 @@ document.addEventListener("input", e => {
   if (t.dataset.runepts) { setRunePts(t.dataset.runepts, t.value); return; }
   if (t.dataset.xp) { pendingPrix.add("xp:" + t.dataset.xp); const n = +t.value || 0; if (n > 0) S.xp[t.dataset.xp] = n; else delete S.xp[t.dataset.xp]; later("prix", () => Store.savePrix()); return; }
   if (t.dataset.ipa || t.dataset.ipv) { const k = t.dataset.ipa ? "pa" : "pv", s = S.suivi.find(x => x.id === +(t.dataset.ipa || t.dataset.ipv)); s[k] = +t.value || 0; s[k === "pa" ? "ma" : "mv"] = today(); saveSuiviLater(); softCrafts(); return; }
-  if (t.dataset.coef) { const s = S.suivi.find(x => x.id === +t.dataset.coef); s.coef = t.value === "" ? 100 : Math.min(4000, Math.max(0, +t.value || 0)); saveSuiviLater(); softCrafts(); return; }
+  if (t.dataset.coef) { const s = S.suivi.find(x => x.id === +t.dataset.coef); if (t.value === "") delete s.coef; else s.coef = Math.min(4000, Math.max(0, +t.value || 0)); t.classList.toggle("miss", t.value === ""); saveSuiviLater(); softCrafts(); return; }
   if (t.id === "cfgTaxe") { setCfg("taxe", Math.min(50, Math.max(0, +t.value || 0))); return; }
   if (t.dataset.brk) { const s = S.suivi.find(x => x.id === +t.dataset.brk); s.brk = +t.value || 0; saveSuiviLater(); softCrafts(); return; }
   if (t.dataset.rq) { const s = S.suivi.find(x => x.id === +t.dataset.rq); if (!s.r) s.r = recipeOf(s).map(([i, q]) => ({ i, q })); s.r[+t.dataset.k].q = Math.max(1, +t.value || 1); saveSuiviLater(); softCrafts(); return; }
@@ -1212,14 +1185,14 @@ async function importData(d) {
 // « Lancer » : fenêtre pour dire « aujourd'hui je fais N exemplaires de cet item, de cette façon »
 let launchId = null;
 function quickSerie(id, qty) {
-  if (!isMe()) return; const s = S.suivi.find(x => x.id === id) || { id, coef: 100, brk: 0 }; const it = ITEMS.get(id); if (!it) return;
+  if (!isMe()) return; const s = S.suivi.find(x => x.id === id) || { id, brk: 0 }; const it = ITEMS.get(id); if (!it) return;
   const st = statsOf(s), b = st.best || stratOf("craft", "brisage");
   launchId = id; $("#lItem").innerHTML = `<b>${esc(it.n)}</b><small>Niv. ${it.l} · ${esc(D.types[it.t] || "")}</small>`;
   $("#lQty").value = qty || 1; $("#lSrc").value = b.src; $("#lDest").value = b.dest; delete $("#lCost").dataset.touched;
   launchCalc(); $("#launchPanel").hidden = false; $("#lQty").focus(); $("#lQty").select();
 }
 function launchCalc() {
-  const id = launchId, s = S.suivi.find(x => x.id === id) || { id, coef: 100, brk: 0 }, st = statsOf(s);
+  const id = launchId, s = S.suivi.find(x => x.id === id) || { id, brk: 0 }, st = statsOf(s);
   const q = Math.max(1, Math.round(+$("#lQty").value || 1)), o = st.opts.find(x => x.src === $("#lSrc").value && x.dest === $("#lDest").value);
   if (!$("#lCost").dataset.touched) $("#lCost").value = o.in != null ? Math.round(o.in * q) : "";
   const cost = +$("#lCost").value || 0, back = o.out != null ? o.out * q : null;
@@ -1349,15 +1322,7 @@ $("#xpDo").addEventListener("click", () => {
 });
 $("#petAll").addEventListener("change", () => renderPet());
 $("#pf").addEventListener("input", () => renderPet());
-$("#planAll").addEventListener("change", e => { lsSet("planAll", e.target.checked ? "1" : ""); renderCrafts(); applyRO(); });
-["budget", "maxq", "dropPct"].forEach(k => { const v = lsGet(k); if (v) $("#" + k).value = v; });
-if (lsGet("planAll")) $("#planAll").checked = true;
-$("#plan").addEventListener("click", e => {
-  const l = e.target.closest("[data-launch]"); if (l) { quickSerie(+l.dataset.launch, +l.dataset.q); return; }
-  const f = e.target.closest("[data-follow]"); if (!f || !isMe()) return;
-  const id = +f.dataset.follow; if (S.suivi.some(x => x.id === id)) return;
-  S.suivi.push({ id, brk: 0 }); Store.saveSuivi(); render(); toast(`${ITEMS.get(id).n} ajouté aux crafts suivis`);
-});
+["maxq", "dropPct"].forEach(k => { const v = lsGet(k); if (v) $("#" + k).value = v; });
 $("#advToggle").addEventListener("change", e => { document.body.classList.toggle("adv-on", e.target.checked); lsSet("adv", e.target.checked ? "1" : ""); });
 if (lsGet("adv")) { document.body.classList.add("adv-on"); $("#advToggle").checked = true; }
 $("#btnHelp").addEventListener("click", () => { $("#helpPanel").hidden = false; });
@@ -1390,7 +1355,7 @@ $("#btnReset").addEventListener("click", async () => {
     const me = member(ME), ids = me.journal.map(j => j._id).filter(Boolean);
     for (let i = 0; i < ids.length; i += 400) { const b = db.batch(); ids.slice(i, i + 400).forEach(id => b.delete(db.doc(`profiles/${ME}/journal/${id}`))); await b.commit(); }
     Object.assign(me, { prix: {}, maj: {}, rp: {}, rm: {}, rpt: {}, rec: {}, xp: {}, xw: {}, xws: "", pl: [], suivi: [], journal: [] });
-    const wasView = VIEW; VIEW = ME; S = me; pendingPrix.clear(); Store.savePrix(); Store.saveSuivi(); VIEW = wasView; S = member(VIEW);
+    const wasView = VIEW; VIEW = ME; S = me; pendingPrix.clear(); Store.savePrix(); Store.saveSuivi(); cartSet([]); VIEW = wasView; S = member(VIEW);
     Object.keys(frozen).forEach(x => delete frozen[x]);
     $("#resetTxt").value = ""; $("#dataPanel").hidden = true; render(); toast("Tout est vidé : page vierge");
   } catch (x) { console.error(x); toast("Échec de la remise à zéro"); }

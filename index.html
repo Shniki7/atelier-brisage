@@ -85,10 +85,10 @@
       <div class="nav-l">Menu</div>
       <nav class="nav" role="tablist" aria-label="Sections">
         <button role="tab" aria-selected="true" data-tab="home"><svg class="i"><use href="#i-home"/></svg><span class="lab">Mes kamas</span></button>
-        <button role="tab" aria-selected="false" data-tab="res"><svg class="i"><use href="#i-res"/></svg><span class="lab"><i class="stepno">1</i>Prix du marché</span><span class="count" id="cRes">0</span></button>
-        <button role="tab" aria-selected="false" data-tab="crafts"><svg class="i"><use href="#i-craft"/></svg><span class="lab"><i class="stepno">2</i>Opportunités</span><span class="count" id="cCrafts">0</span></button>
-        <button role="tab" aria-selected="false" data-tab="jr"><svg class="i"><use href="#i-jr"/></svg><span class="lab"><i class="stepno">3</i>Mes séries</span><span class="count" id="cJr">0</span></button>
-        <button role="tab" aria-selected="false" data-tab="dash"><svg class="i"><use href="#i-dash"/></svg><span class="lab"><i class="stepno">4</i>Résultats</span></button>
+        <button role="tab" aria-selected="false" data-tab="res"><svg class="i"><use href="#i-res"/></svg><span class="lab">Prix du marché</span><span class="count" id="cRes">0</span></button>
+        <button role="tab" aria-selected="false" data-tab="crafts"><svg class="i"><use href="#i-craft"/></svg><span class="lab">Opportunités</span><span class="count" id="cCrafts">0</span></button>
+        <button role="tab" aria-selected="false" data-tab="jr"><svg class="i"><use href="#i-jr"/></svg><span class="lab">Mes séries</span><span class="count" id="cJr">0</span></button>
+        <button role="tab" aria-selected="false" data-tab="dash"><svg class="i"><use href="#i-dash"/></svg><span class="lab">Résultats</span></button>
         <button role="tab" aria-selected="false" data-tab="grp"><svg class="i"><use href="#i-grp"/></svg><span class="lab">Le groupe</span><span class="count" id="cGrp">0</span></button>
         <button role="tab" aria-selected="false" data-tab="pet"><svg class="i"><use href="#i-paw"/></svg><span class="lab">Familiers</span></button>
       </nav>
@@ -131,7 +131,11 @@
             <div class="tbl-wrap"><table class="t-cart"><thead><tr><th class="l">Item</th><th class="l">Moyen</th><th>Qté</th><th>J'engage</th><th>Je récupère</th><th>Je gagne</th><th></th></tr></thead><tbody id="cart"></tbody></table></div>
             <div class="cart-foot" id="cartFoot"></div>
             <details class="ideas" id="ideasBox"><summary>Des idées ? Le meilleur panier possible avec tes kamas disponibles <span id="ideasSub" class="note"></span></summary>
-              <p class="note fmoy">Pour chaque item, l'outil compare tes 4 moyens (crafter ou acheter, puis briser ou revendre) et garde le plus rentable.</p>
+              <p class="note fmoy">Pour chaque item suivi, l'outil compare tes 4 moyens (crafter ou acheter, puis briser ou revendre) et garde le plus rentable.</p>
+              <div class="row ideas-ctl">
+                <div class="field"><label for="maxq">Max par item</label><input id="maxq" class="num keep" type="number" min="1" max="50" step="1" value="5"></div>
+                <div class="field"><label for="dropPct" title="Le coefficient de brisage baisse à chaque exemplaire brisé : de combien, en %, à chaque exemplaire en plus">Baisse par exemplaire %</label><input id="dropPct" class="num keep" type="number" min="0" max="50" step="0.5" placeholder="0"></div>
+              </div>
               <div class="tbl-wrap"><table class="t-plan"><tbody id="homePlan"></tbody></table></div>
               <p class="note" id="homePlanNote"></p>
             </details>
@@ -270,27 +274,6 @@
           <div class="panel-head"><h2>Pour démarrer</h2><button class="ghost" type="button" id="startHide">Masquer</button></div>
           <ol class="steps-card" id="startSteps"></ol>
         </div>
-        <div class="panel plan">
-          <div class="panel-head"><h2>Que faire avec mon budget ?</h2><span class="sub">La combinaison qui rapporte le plus</span></div>
-          <div class="plan-ctl">
-            <div class="field"><label for="budget">Mes kamas (total)</label><input id="budget" class="num keep" type="number" min="0" step="100000" value="10000000"></div>
-            <div class="field"><label for="maxq">Max par item</label><input id="maxq" class="num keep" type="number" min="1" max="50" step="1" value="5"></div>
-            <div class="field adv"><label for="dropPct" title="De combien baisse la valeur à chaque exemplaire supplémentaire du même item">Baisse par exemplaire %</label><input id="dropPct" class="num keep" type="number" min="0" max="50" step="0.5" value="0"></div>
-            <label class="chk"><input type="checkbox" id="planAll" class="keep"><span>Chercher aussi parmi tous les items dont je connais les prix</span></label>
-            <label class="chk"><input type="checkbox" id="advToggle"><span>Options avancées</span></label>
-          </div>
-          <div class="plan-body">
-            <div class="tbl-wrap"><table class="t-plan"><thead><tr><th class="l">À faire</th><th class="l">Comment</th><th>Qté</th><th>Investir</th><th>Bénéfice</th><th></th></tr></thead><tbody id="plan"></tbody></table></div>
-            <div class="plan-sum">
-              <div class="tot big"><span>Bénéfice attendu</span><b id="tBen">0</b></div>
-              <div class="tot"><span>À investir</span><b id="tInv">0</b></div>
-              <div class="tot"><span>Rendement</span><b id="tRoi">–</b></div>
-              <div class="tot"><span>Reste du budget</span><b id="tLeft">0</b></div>
-            </div>
-          </div>
-          <p class="hint" id="planGain" hidden></p>
-          <p class="note" id="planInfo"></p>
-        </div>
 
         <div class="panel">
           <div class="panel-head">
@@ -337,6 +320,7 @@
 
         <div class="panel" id="mk-runes" hidden>
           <div class="panel-head"><h2>Runes <span class="count-chip" id="cRunes">0</span> · ce que tu récupères en brisant</h2><span class="sub">Prix de vente d'une rune de base (Ba)</span></div>
+          <label class="chk" style="margin:0 0 6px"><input type="checkbox" id="advToggle"><span>Afficher les points par rune (avancé)</span></label>
           <p class="note adv">« Points / rune » = ce qu'apporte une rune de base (5 pour Vitalité). Le brisage estimé compte tout en runes de base : si tu revends surtout des Pa ou des Ra, mets leur prix divisé par 3 ou par 10.</p>
           <div class="tbl-wrap">
             <table class="t-res">
@@ -420,7 +404,7 @@
     <div class="file"><span class="lbl">Importer un fichier</span><input type="file" id="fileImport" accept=".json,application/json"></div>
     <div class="reset-box">
       <h3>Repartir de zéro</h3>
-      <p class="note">Efface <b>tes</b> items suivis, tes prix, tes XP de familiers et toutes tes séries. Ton pseudo, ton groupe et les données des autres membres ne bougent pas. Une sauvegarde est téléchargée juste avant, par sécurité.</p>
+      <p class="note">Efface <b>tes</b> items suivis, tes prix, tes XP de familiers, ton panier et toutes tes séries. Ton pseudo, ton groupe et les données des autres membres ne bougent pas. Une sauvegarde est téléchargée juste avant, par sécurité.</p>
       <div class="row" style="gap:8px;align-items:center"><input id="resetTxt" placeholder="Tape VIDER pour confirmer" autocomplete="off" style="max-width:220px"><button type="button" class="danger" id="btnReset" disabled>Tout vider</button></div>
     </div>
   </div>

@@ -4,10 +4,10 @@ Outil de rentabilité du craft et du brisage pour **Dofus 3**, à partager entre
 
 - **2 799 recettes d'équipements Dofus 3**, extraites des fichiers du jeu et mises à jour chaque semaine par GitHub.
 - **Mes kamas** (page d'accueil) : 1. les kamas que j'engage → 2. mon panier (je cherche un item, je choisis le moyen et la quantité, l'outil calcule ce que j'engage et ce que je gagne, puis « Lancer le panier ») avec des idées si besoin → 3. ce qui est en cours → 4. mon bénéfice.
-- **Opportunités** : pour chaque item, la meilleure des 4 options (crafter ou acheter, puis briser ou revendre), avec un indice de fiabilité, et le plan qui rapporte le plus pour ton budget.
+- **Opportunités** : pour chaque item suivi, la meilleure des 4 options (crafter ou acheter, puis briser ou revendre), avec un indice de fiabilité. Le plan pour ton budget est dans « Mes kamas › Des idées ? ».
 - **Prix du marché** : tous tes prix au même endroit (ressources, runes, items), avec les prix proposés par ton groupe.
 - **Mes séries** : chaque série, de l'achat à la vente, avec un bouton par étape (Brisé, Vendu).
-- **Tableau de bord** : bénéfice par jour, semaine, mois ou année, rendement réel par item, calendrier d'activité et alertes.
+- **Résultats** : bénéfice par jour, semaine, mois ou année, rendement réel par item, calendrier d'activité et alertes. Le bénéfice ne compte que les kamas encaissés ; des runes pas encore vendues restent « en cours ».
 - **Familiers** : XP à donner selon la courbe officielle, et la ressource la moins chère pour 1 000 XP (XP par ressource partagées dans le groupe).
 - **Le groupe** : chacun a son profil et voit les bilans et le journal des autres, en lecture seule.
 
@@ -78,7 +78,7 @@ runes de base = (jet moyen × poids de la caractéristique × niveau × 0,015 + 
 
 Le poids d'une rune de base vaut « points apportés par la rune × poids de la caractéristique » (par exemple 5 points pour une rune Vitalité). La valeur du brisage est la somme des runes multipliées par leur prix, moins la taxe HDV.
 
-C'est une **estimation** : la formule n'est pas publiée par Ankama, le jet réel de ton item varie, et l'outil compte tout en runes de base. Saisis le coefficient affiché en jeu pour chaque item. Si tu connais la vraie valeur de brisage, tape-la : elle remplace l'estimation.
+C'est une **estimation** : la formule n'est pas publiée par Ankama, le jet réel de ton item varie, et l'outil compte tout en runes de base. Il n'y a **pas de coefficient par défaut** : tant que tu n'as pas saisi le coefficient affiché en jeu, l'outil n'estime pas le brisage de l'item. Si tu connais la vraie valeur de brisage, tape-la : elle remplace l'estimation.
 
 ## Raccourcis clavier
 
