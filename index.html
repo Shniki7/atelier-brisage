@@ -155,9 +155,19 @@
           <div class="row cgo" style="gap:12px;align-items:flex-end;flex-wrap:wrap">
             <div class="field"><label for="cQ">J'en crafte</label><input id="cQ" class="num" type="number" min="1" value="1" style="width:110px"></div>
             <div class="tot big"><span>Bénéfice total</span><b id="cBen">–</b></div>
+            <label class="chk own-only" style="margin-bottom:12px"><input type="checkbox" id="cMoi" class="keep" checked><span>C'est moi qui le crafte</span></label>
             <button class="primary own-only" type="button" id="cGo">C'est parti : je lance</button>
           </div>
           <p class="note" id="cGoNote"></p>
+        </div>
+        <div class="panel cstep2" id="cHistP">
+          <div class="panel-head"><h2><span class="fn">6</span>Mes crafts</h2><span class="sub" id="cHistSub"></span></div>
+          <div class="row" style="gap:6px;flex-wrap:wrap" role="group" aria-label="Filtrer mes crafts">
+            <button type="button" class="ghost" data-chf="all">Tous</button>
+            <button type="button" class="ghost" data-chf="moi">Craftés par moi</button>
+            <button type="button" class="ghost" data-chf="autre">Pas par moi</button>
+          </div>
+          <div class="tbl-wrap"><table class="t-calc t-hist"><thead><tr><th class="l">Date</th><th class="l">Item</th><th>Qté</th><th>Coût</th><th class="l">Crafté par moi</th></tr></thead><tbody id="cHist"></tbody></table></div>
         </div>
       </section>
 

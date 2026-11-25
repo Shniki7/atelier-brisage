@@ -718,7 +718,33 @@ function calcState() {
   const bud = +lsGet("budget") || 0, free = bud; // les kamas que j'ai en poche : les ventes en cours sont déjà payées
   return { it, s, lines, cost, miss, pv, net, ben, bud, free, canDo: !miss && cost > 0 ? Math.floor(free / cost) : null };
 }
+// liste de tout ce que j'ai crafté (séries obtenues en craftant), la plus récente en haut
+let calcHistF = lsGet("calcHistF") || "all";
+const jrWhen = e => e.ts ? new Date(e.ts) : pD(e.achat);
+function renderCalcHist() {
+  const me = isMe(), all = S.journal.filter(e => (e.src || "craft") === "craft").sort((a, b) => (jrWhen(b)?.getTime() || 0) - (jrWhen(a)?.getTime() || 0));
+  const moi = e => e.moi !== false, nMoi = all.filter(moi).length;
+  const L = calcHistF === "moi" ? all.filter(moi) : calcHistF === "autre" ? all.filter(e => !moi(e)) : all;
+  $("#cHistSub").textContent = all.length ? `${fmt(all.length)} craft${all.length > 1 ? "s" : ""} · ${fmt(nMoi)} par moi · ${fmt(all.length - nMoi)} pas par moi` : "";
+  document.querySelectorAll("[data-chf]").forEach(b => b.classList.toggle("on", b.dataset.chf === calcHistF));
+  $("#cHist").innerHTML = L.length ? L.map(e => { const d = jrWhen(e); return `<tr>
+    <td class="l m">${d ? d.toLocaleDateString("fr-FR", { day: "2-digit", month: "2-digit", year: "numeric" }) + (e.ts ? " · " + d.toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit" }) : "") : "–"}</td>
+    <td class="l"><b>${esc(e.nom || ITEMS.get(e.item)?.n || "?")}</b></td>
+    <td class="m">${fmt(+e.qte || 0)}</td>
+    <td class="m">${fmt(+e.cout || 0)}</td>
+    <td class="l"><label class="chk"><input type="checkbox" data-moi="${e._id}" ${moi(e) ? "checked" : ""} ${me ? "" : "disabled"} aria-label="Crafté par moi : ${esc(e.nom || "")}"><span>${moi(e) ? "oui" : "non"}</span></label></td></tr>`; }).join("")
+    : `<tr><td class="l note" colspan="5">${all.length ? "Aucun craft avec ce filtre." : "Rien pour l'instant : chaque craft lancé avec « C'est parti » apparaîtra ici."}</td></tr>`;
+}
+document.addEventListener("click", e => { const b = e.target.closest("[data-chf]"); if (!b) return; calcHistF = b.dataset.chf; lsSet("calcHistF", calcHistF); renderCalcHist(); });
+document.addEventListener("change", e => {
+  const t = e.target; if (!t.dataset?.moi || !isMe()) return;
+  const e0 = S.journal.find(j => j._id === t.dataset.moi); if (e0) e0.moi = t.checked;
+  Store.updJr(t.dataset.moi, { moi: t.checked }); renderCalcHist();
+});
+$("#cMoi").checked = lsGet("calcMoi") !== "0";
+$("#cMoi").addEventListener("change", e => lsSet("calcMoi", e.target.checked ? "1" : "0"));
 function renderCalc() {
+  renderCalcHist();
   const me = isMe(), x = calcState(), bud = +lsGet("budget") || 0;
   if (document.activeElement !== $("#cBud")) $("#cBud").value = bud ? lotFmt(bud) : "";
   $("#cItem").innerHTML = x ? `<div class="citem"><b>${esc(x.it.n)}</b><small>Niv. ${x.it.l} · ${esc(D.types[x.it.t] || "")}${x.it.j ? " · " + esc(x.it.j) : ""}</small></div>` : `<p class="note" style="margin:0">Cherche l'item dont tu regardes le prix en HDV.</p>`;
@@ -785,7 +811,7 @@ $("#v-calc").addEventListener("change", e => {
 $("#cGo").addEventListener("click", () => {
   const x = calcState(); if (!x || x.miss || !x.pv || !isMe()) return; const q = Math.max(1, Math.round(+$("#cQ").value || 1));
   if (!S.suivi.some(s => s.id === calcId)) { S.suivi.push({ id: calcId, brk: 0, pv: x.pv, mv: today() }); Store.saveSuivi(); }
-  Store.addJr({ item: calcId, nom: x.it.n, qte: q, cout: Math.round(x.cost * q), achat: today(), brisage: "", runes: 0, vente: "", encaisse: 0, src: "craft", dest: "revente" });
+  Store.addJr({ item: calcId, nom: x.it.n, qte: q, cout: Math.round(x.cost * q), achat: today(), brisage: "", runes: 0, vente: "", encaisse: 0, src: "craft", dest: "revente", ts: new Date().toISOString(), moi: $("#cMoi").checked });
   toast(`${q} × ${x.it.n} lancé${q > 1 ? "s" : ""} : à suivre dans « Mes séries »`);
 });
 

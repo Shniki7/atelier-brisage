@@ -544,6 +544,8 @@ td.acts .quick+.quick,td.l .quick+.quick{margin-left:6px}
 @media (max-width:760px){.cgrid{grid-template-columns:1fr 1fr}}
 .cgo .tot.big{min-width:200px}.cgo .tot.big b{font-size:22px}
 #cGo{padding:11px 20px}
+.t-hist{min-width:560px}
+[data-chf].on{background:var(--surface-2);border-color:var(--line-2);color:var(--fg);font-weight:600}
 
 /* ---------- lecture seule ---------- */
 body.ro .own-only{display:none!important}
