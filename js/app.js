@@ -361,7 +361,8 @@ function renderHeader() {
 $("#members").addEventListener("click", e => { const b = e.target.closest("[data-view]"); if (!b) return; if (isHidden(b.dataset.view)) { toast("Ce profil est privé"); return; } setView(b.dataset.view); });
 $("#btnBackMe").addEventListener("click", () => setView(ME));
 const TITLES = {
-  calc: ["Calculer un craft", "Mes kamas → les prix en HDV → combien j'en crafte et ce que je gagne"],
+  calc: ["Calculer un craft", "L'item → les prix en HDV → combien j'en crafte et ce que je gagne"],
+  hist: ["Mes crafts", "Tout ce que tu as crafté, avec la date"],
   home: ["Mes kamas", "Ce que j'engage, où je le place, ce que je gagne"],
   dash: ["Résultats", "Ce que tu as vraiment gagné : par jour, semaine, mois, année"],
   grp: ["Le groupe", "Bilans et classement des membres"],
@@ -376,11 +377,16 @@ function setTab(t) {
   tab = t; lsSet("tab", t);
   $("#pageTitle").textContent = TITLES[t][0]; $("#pageSub").textContent = TITLES[t][1];
   document.querySelectorAll("nav [data-tab]").forEach(x => x.setAttribute("aria-selected", x.dataset.tab === t));
-  ["calc", "home", "dash", "grp", "cat", "crafts", "res", "jr", "pet"].forEach(x => $("#v-" + x).hidden = x !== t);
+  ["calc", "hist", "home", "dash", "grp", "cat", "crafts", "res", "jr", "pet"].forEach(x => $("#v-" + x).hidden = x !== t);
+  if (!["calc", "hist"].includes(t)) navMore(true);
   if (t === "dash") lsSet("lastDash", today());
   render();
 }
 document.querySelector("nav").addEventListener("click", e => { const b = e.target.closest("[data-tab]"); if (b) setTab(b.dataset.tab); });
+// menu « Plus » : les onglets moins utilisés, repliés par défaut
+function navMore(open) { $("#navSub").hidden = !open; $("#navMore").setAttribute("aria-expanded", open); lsSet("navMore", open ? "1" : "0"); }
+navMore(lsGet("navMore") === "1");
+$("#navMore").addEventListener("click", () => navMore($("#navSub").hidden));
 
 // ---------------------------------------------------------------- rendu
 function render() {
@@ -392,7 +398,9 @@ function render() {
   const nRun = S.journal.filter(e => !isDone(e)).length;
   $("#cJr").textContent = nRun; $("#cJr").title = `${nRun} série(s) en cours`;
   if (tab === "home") renderHome();
+  $("#cHistN").textContent = S.journal.filter(e => (e.src || "craft") === "craft").length;
   if (tab === "calc") renderCalc();
+  if (tab === "hist") renderCalcHist();
   if (tab === "pet") renderPet();
   if (tab === "dash") renderDash();
   if (tab === "grp") renderGroup();
@@ -756,9 +764,10 @@ document.addEventListener("change", e => {
 $("#cMoi").checked = lsGet("calcMoi") !== "0";
 $("#cMoi").addEventListener("change", e => lsSet("calcMoi", e.target.checked ? "1" : "0"));
 function renderCalc() {
-  renderCalcHist();
   const me = isMe(), x = calcState(), bud = +lsGet("budget") || 0;
   if (document.activeElement !== $("#cBud")) $("#cBud").value = bud ? lotFmt(bud) : "";
+  const rec = calcRecent().filter(id => id !== calcId && ITEMS.has(id)).slice(0, 5);
+  $("#cRecent").innerHTML = rec.length ? `<span class="note">Récents :</span>` + rec.map(id => `<button type="button" class="chip" data-crec="${id}">${esc(ITEMS.get(id).n)}</button>`).join("") : "";
   $("#cItem").innerHTML = x ? `<div class="citem"><b>${esc(x.it.n)}</b><small>Niv. ${x.it.l} · ${esc(D.types[x.it.t] || "")}${x.it.j ? " · " + esc(x.it.j) : ""}</small></div>` : `<p class="note" style="margin:0">Cherche l'item dont tu regardes le prix en HDV.</p>`;
   ["cIngP", "cSellP", "cResP"].forEach(k => $("#" + k).hidden = !x);
   if (!x) { $("#cBudNote").textContent = ""; return; }
@@ -787,17 +796,19 @@ function calcTotals() {
   $("#cPvNote").textContent = x.pv ? `Après la taxe HDV de ${Math.round(taxe() * 1000) / 10} % : ${fmt(x.net)} pour toi.` : "";
   const roi = x.ben != null && x.cost ? x.ben / x.cost : null;
   $("#cSum").innerHTML = `
-    <div class="tot"><span>Coût d'un craft</span><b>${x.miss ? "?" : fmt(x.cost)}</b></div>
-    <div class="tot"><span>Vente d'un item (taxe déduite)</span><b>${x.pv ? fmt(x.net) : "?"}</b></div>
-    <div class="tot"><span>Bénéfice par craft</span><b class="${x.ben < 0 ? "neg" : x.ben > 0 ? "pos" : ""}">${x.ben != null ? `${x.ben > 0 ? "+" : ""}${fmt(x.ben)} <small>(${pillTxt(roi)})</small>` : "?"}</b></div>
-    <div class="tot"><span>Avec mes kamas, j'en crafte au plus</span><b>${x.canDo != null && x.bud ? fmt(x.canDo) : "?"}</b></div>`;
+    <div><span>Coût d'un craft</span><b>${x.miss ? "?" : fmt(x.cost)}</b></div>
+    <div><span>Vente (taxe déduite)</span><b>${x.pv ? fmt(x.net) : "?"}</b></div>
+    <div><span>Bénéfice par craft</span><b class="${x.ben < 0 ? "neg" : x.ben > 0 ? "pos" : ""}">${x.ben != null ? `${x.ben > 0 ? "+" : ""}${fmt(x.ben)} <small>(${pillTxt(roi)})</small>` : "?"}</b></div>
+    <div><span>J'en crafte au plus</span><b>${x.canDo != null && x.bud ? fmt(x.canDo) : "?"}</b></div>`;
   const q = Math.max(1, Math.round(+$("#cQ").value || 1));
   $("#cBen").textContent = x.ben != null ? `${x.ben * q > 0 ? "+" : ""}${fmt(x.ben * q)}` : "–"; $("#cBen").style.color = x.ben == null ? "" : x.ben < 0 ? "var(--bad)" : "var(--good)";
   const need = x.miss ? null : x.cost * q;
-  $("#cGoNote").innerHTML = (nUp && !x.miss && x.pv ? `<span class="neg">${nUp} ressource${nUp > 1 ? "s" : ""} plus chère${nUp > 1 ? "s" : ""} que d'habitude (voir l'étape 3).</span> ` : "") + (x.miss ? "Complète d'abord les prix des ressources (étape 3)." : !x.pv ? "Indique le prix de vente (étape 4)." : `Ça t'engage ${fmt(need)} kamas${x.bud && need > x.free ? ` · <span class="neg">plus que tes ${fmt(x.free)} kamas</span>` : ""}. La série ira dans « Mes séries », où tu noteras la mise en vente puis les ventes.`);
+  $("#cGoNote").innerHTML = (nUp && !x.miss && x.pv ? `<span class="neg">${nUp} ressource${nUp > 1 ? "s" : ""} plus chère${nUp > 1 ? "s" : ""} que d'habitude (voir les ressources).</span> ` : "") + (x.miss ? "Complète d'abord les prix des ressources." : !x.pv ? "Indique le prix de vente juste au-dessus." : `Ça t'engage ${fmt(need)} kamas${x.bud && need > x.free ? ` · <span class="neg">plus que tes ${fmt(x.free)} kamas</span>` : ""}. Le craft ira dans « Mes crafts ».`);
   $("#cGo").disabled = !!x.miss || !x.pv;
 }
-function calcPick(id) { calcId = id; lsSet("calcItem", String(id)); $("#cSearch").value = ""; $("#cResults").hidden = true; $("#cQ").value = 1; renderCalc(); applyRO(); setTimeout(() => (document.querySelector("#cIng input.miss") || $("#cPv")).focus(), 0); }
+function calcRecent() { try { return JSON.parse(lsGet("calcRecent") || "[]"); } catch (e) { return []; } }
+document.addEventListener("click", e => { const b = e.target.closest("[data-crec]"); if (b) calcPick(+b.dataset.crec); });
+function calcPick(id) { if (calcId && calcId !== id) lsSet("calcRecent", JSON.stringify([calcId, ...calcRecent().filter(x => x !== calcId && x !== id)].slice(0, 8))); calcId = id; lsSet("calcItem", String(id)); $("#cSearch").value = ""; $("#cResults").hidden = true; $("#cQ").value = 1; renderCalc(); applyRO(); setTimeout(() => (document.querySelector("#cIng input.miss") || $("#cPv")).focus(), 0); }
 $("#cSearch").addEventListener("input", e => {
   const f = norm(e.target.value.trim()), box = $("#cResults"); if (f.length < 2) { box.hidden = true; return; }
   const toks = f.split(/\s+/), H = D.items.filter(it => toks.every(t => it.nt.includes(t))).slice(0, 14);

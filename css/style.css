@@ -534,6 +534,27 @@ td.acts .quick+.quick,td.l .quick+.quick{margin-left:6px}
 #btnPriv.on{color:var(--warn)}
 
 .calc{max-width:980px}
+.calc2{display:grid;grid-template-columns:minmax(0,1fr) 300px;gap:18px;align-items:start;max-width:1180px}
+.calc2[hidden]{display:none}
+.cl-side{position:sticky;top:84px;gap:12px}
+.cl-side h2,.cl-main .cstep2>h2{margin:0;font-size:16px}
+.cl-side input.num{width:100%}
+.csum{display:grid;gap:0;border:1px solid var(--line);border-radius:10px;overflow:hidden}
+.csum>div{display:flex;justify-content:space-between;align-items:baseline;gap:8px;padding:7px 10px;border-bottom:1px solid var(--line);font-size:12.5px}
+.csum>div:last-child{border-bottom:none}.csum span{color:var(--muted)}
+.csum b{font-family:var(--mono);font-variant-numeric:tabular-nums;text-align:right}.csum b small{color:var(--muted);font-weight:500}
+.cl-side .tot.big b{font-size:22px}
+.cl-side #cGo{width:100%;padding:11px 16px}
+.cres{display:grid;gap:12px}.cres[hidden]{display:none}
+.crecent{display:flex;flex-wrap:wrap;gap:6px;align-items:center}.crecent:empty{display:none}
+.chip{text-transform:none;letter-spacing:normal;border:1px solid var(--line-2);background:var(--surface);color:var(--fg);border-radius:999px;padding:3px 10px;font-size:12px;font-weight:500}
+.chip:hover{background:var(--surface-2)}
+@media (max-width:960px){.calc2{grid-template-columns:1fr}.cl-side{position:static}}
+.nav-more{border:none;background:transparent;color:var(--side-muted);justify-content:flex-start;width:100%;padding:8px 10px;border-radius:8px;font-weight:500;margin-top:6px}
+.nav-more:hover{background:var(--side-hover);color:#fff}
+.nav-more .chev{transition:transform .15s}.nav-more[aria-expanded="true"] .chev{transform:rotate(180deg)}
+.nav-sub{display:grid;gap:2px}.nav-sub[hidden]{display:none}
+@media (max-width:960px){#btnHelp,#btnTheme{display:none}.nav-sub{display:flex;gap:2px}.nav-more{width:auto;margin:0}}
 .cstep2{display:grid;gap:12px}
 .cstep2>h2{margin:0;font-size:16px;display:flex;align-items:center}
 .citem b{display:block;font-family:var(--display);font-size:18px}.citem small{color:var(--muted)}
