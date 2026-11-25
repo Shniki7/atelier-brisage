@@ -32,7 +32,7 @@ let open = new Set(), tab = "calc", rfilter = "";
 let gran = lsGet("gran") || "semaine", ggran = lsGet("ggran") || "semaine", demoOn = true, charts = {};
 const pendingPrix = new Set();
 
-function blank() { return { p: {}, prix: {}, maj: {}, rp: {}, rm: {}, rpt: {}, rec: {}, xp: {}, xw: {}, xws: "", pl: [], cfg: { taxe: 2, recolte: "hdv" }, suivi: [], journal: [], loaded: false }; }
+function blank() { return { p: {}, prix: {}, maj: {}, ph: {}, rp: {}, rm: {}, rpt: {}, rec: {}, xp: {}, xw: {}, xws: "", pl: [], cfg: { taxe: 2, recolte: "hdv" }, suivi: [], journal: [], loaded: false }; }
 function member(uid) { if (!MEMBERS.has(uid)) MEMBERS.set(uid, blank()); return MEMBERS.get(uid); }
 const isMe = () => VIEW === ME;
 const ro = () => !isMe();
@@ -64,6 +64,17 @@ function priceInfo(rid, M = S) {
   if (M.rec?.[rid] && M.cfg?.recolte === "gratuit") return { v: 0, src: "récolte" };
   const p = +M.prix[rid]; if (p > 0) return { v: p, src: "moi" };
   const g = groupPrice("prix", "maj", rid, M); return g ? { v: g.v, src: "groupe", n: g.n } : { v: null, src: null };
+}
+// « attention tu achètes plus cher » : compare mon prix à mes prix d'avant (médiane), sinon à celui du groupe
+function priceAlert(rid) {
+  const v = +S.prix[rid]; if (!(v > 0)) return null;
+  const since = S.maj[rid] || today(), prev = (S.ph?.[rid] || []).filter(([d]) => d < since && ageDays(d) <= 60).map(x => +x[1]).filter(x => x > 0).sort((a, b) => a - b);
+  let ref = null, from = "";
+  if (prev.length) { const k = prev.length >> 1; ref = prev.length % 2 ? prev[k] : (prev[k - 1] + prev[k]) / 2; from = prev.length > 1 ? "ton prix habituel" : "ton dernier prix"; }
+  else { const g = groupPrice("prix", "maj", rid); if (g) { ref = g.v; from = "le prix du groupe"; } }
+  if (!ref) return null;
+  const d = v / ref - 1; if (Math.abs(d) < 0.15) return null;
+  return { up: d > 0, pct: Math.round(Math.abs(d) * 100), ref, from };
 }
 function runePriceInfo(a, M = S) {
   const p = +M.rp?.[a]; if (p > 0) return { v: p, src: "moi" };
@@ -234,12 +245,13 @@ function subscribeMember(uid) {
   const base = db.doc(`profiles/${uid}`);
   unsubs.push(base.collection("data").doc("prix").onSnapshot(snap => {
     const d = snap.data() || {};
-    const nx = { prix: { ...(d.p || {}) }, maj: { ...(d.m || {}) }, rp: { ...(d.rp || {}) }, rm: { ...(d.rm || {}) }, rpt: { ...(d.rpt || {}) }, rec: { ...(d.r || {}) }, xp: { ...(d.xp || {}) }, xw: { ...(d.xw || {}) }, xws: d.xws || "", pl: [...(d.pl || [])], cfg: { taxe: 2, recolte: "hdv", ...(d.cfg || {}) } };
+    const nx = { prix: { ...(d.p || {}) }, maj: { ...(d.m || {}) }, ph: { ...(d.ph || {}) }, rp: { ...(d.rp || {}) }, rm: { ...(d.rm || {}) }, rpt: { ...(d.rpt || {}) }, rec: { ...(d.r || {}) }, xp: { ...(d.xp || {}) }, xw: { ...(d.xw || {}) }, xws: d.xws || "", pl: [...(d.pl || [])], cfg: { taxe: 2, recolte: "hdv", ...(d.cfg || {}) } };
     if (uid === ME) for (const k of pendingPrix) {           // garder les saisies pas encore enregistrées
       const [f, id] = k.split(":");
       if (f === "cfg") { nx.cfg = { ...m.cfg }; continue; }
       if (f === "pl") { nx.pl = [...m.pl]; continue; }
       if (f === "xw") { nx.xw = { ...m.xw }; nx.xws = m.xws; continue; }
+      if (f === "prix") { if (m.ph?.[id]) nx.ph[id] = m.ph[id]; else delete nx.ph[id]; }
       const date = f === "prix" ? "maj" : f === "rp" ? "rm" : null;
       if (m[f][id] != null && m[f][id] !== false && m[f][id] !== 0) nx[f][id] = m[f][id]; else delete nx[f][id];
       if (date) nx[date][id] = m[date][id];
@@ -298,7 +310,7 @@ function showError(msg) {
   b.querySelector("button").onclick = () => b.remove();
 }
 const Store = {
-  savePrix() { if (!isMe()) return; pendingPrix.clear(); db.doc(`profiles/${ME}/data/prix`).set({ p: { ...S.prix }, m: { ...S.maj }, rp: { ...S.rp }, rm: { ...S.rm }, rpt: { ...S.rpt }, r: { ...S.rec }, xp: { ...S.xp }, xw: { ...S.xw }, xws: S.xws || "", pl: [...S.pl], cfg: { ...S.cfg } }).catch(fail); },
+  savePrix() { if (!isMe()) return; pendingPrix.clear(); db.doc(`profiles/${ME}/data/prix`).set({ p: { ...S.prix }, m: { ...S.maj }, ph: { ...(S.ph || {}) }, rp: { ...S.rp }, rm: { ...S.rm }, rpt: { ...S.rpt }, r: { ...S.rec }, xp: { ...S.xp }, xw: { ...S.xw }, xws: S.xws || "", pl: [...S.pl], cfg: { ...S.cfg } }).catch(fail); },
   saveSuivi() { if (!isMe()) return; timers.suivi = null; db.doc(`profiles/${ME}/data/suivi`).set({ items: S.suivi.map(x => ({ ...x })) }).catch(fail); },
   saveJournal() {
     if (!isMe()) return; timers.journal = null;
@@ -752,7 +764,7 @@ function renderCalc() {
   if (!x) { $("#cBudNote").textContent = ""; return; }
   keepFocus(() => {
     $("#cIng").innerHTML = x.lines.map(l => { const lot = calcLot[l.rid] || 1, own = +S.prix[l.rid] > 0; return `<tr>
-      <td class="l"><b>${esc(resName(l.rid))}</b>${l.pi.src === "groupe" ? ' <span class="grp-tag" title="Prix proposé par ton groupe : tape le tien pour le remplacer">groupe</span>' : ""}</td>
+      <td class="l"><b>${esc(resName(l.rid))}</b>${l.pi.src === "groupe" ? ' <span class="grp-tag" title="Prix proposé par ton groupe : tape le tien pour le remplacer">groupe</span>' : ""}<div class="palert" id="pa-${l.rid}"></div></td>
       <td class="m">${l.q}</td>
       <td><input class="num lot ${l.pi.v == null ? "miss" : own ? "" : "grp"}" id="cp-${l.rid}" data-cp="${l.rid}" data-col="cp" type="text" inputmode="decimal" autocomplete="off" value="${own ? lotFmt(S.prix[l.rid] * lot) : ""}" placeholder="${l.pi.v != null ? lotFmt(l.pi.v * lot) : "prix ?"}" aria-label="Prix HDV de ${esc(resName(l.rid))}"></td>
       <td class="l"><select data-clot="${l.rid}" aria-label="Le prix est pour combien d'unités">${LOTS.map(n => `<option value="${n}" ${n === lot ? "selected" : ""}>${n === 1 ? "1 unité" : fmt(n) + " unités"}</option>`).join("")}</select></td>
@@ -765,7 +777,13 @@ function calcTotals() {
   const x = calcState(); if (!x) return;
   $("#cBudNote").textContent = "";
   $("#cCost").innerHTML = x.miss ? `<span class="miss-t">il manque ${x.miss} prix</span>` : fmt(x.cost);
-  x.lines.forEach(l => { const c = document.getElementById("cl-" + l.rid); if (c) c.textContent = l.pi.v != null ? fmt(l.pi.v * l.q) : "–"; });
+  x.lines.forEach(l => {
+    const c = document.getElementById("cl-" + l.rid); if (c) c.textContent = l.pi.v != null ? fmt(l.pi.v * l.q) : "–";
+    const a = document.getElementById("pa-" + l.rid); if (!a) return; const w = priceAlert(l.rid);
+    a.className = "palert" + (w ? (w.up ? " up" : " down") : ""); const inp = document.getElementById("cp-" + l.rid); if (inp) inp.classList.toggle("dear", !!w?.up);
+    a.textContent = !w ? "" : w.up ? `Attention : ${w.pct} % plus cher que ${w.from} (${fmt(w.ref)}/u)` : `Bonne affaire : ${w.pct} % moins cher que ${w.from} (${fmt(w.ref)}/u)`;
+  });
+  const nUp = x.lines.filter(l => priceAlert(l.rid)?.up).length;
   $("#cPvNote").textContent = x.pv ? `Après la taxe HDV de ${Math.round(taxe() * 1000) / 10} % : ${fmt(x.net)} pour toi.` : "";
   const roi = x.ben != null && x.cost ? x.ben / x.cost : null;
   $("#cSum").innerHTML = `
@@ -776,7 +794,7 @@ function calcTotals() {
   const q = Math.max(1, Math.round(+$("#cQ").value || 1));
   $("#cBen").textContent = x.ben != null ? `${x.ben * q > 0 ? "+" : ""}${fmt(x.ben * q)}` : "–"; $("#cBen").style.color = x.ben == null ? "" : x.ben < 0 ? "var(--bad)" : "var(--good)";
   const need = x.miss ? null : x.cost * q;
-  $("#cGoNote").innerHTML = x.miss ? "Complète d'abord les prix des ressources (étape 3)." : !x.pv ? "Indique le prix de vente (étape 4)." : `Ça t'engage ${fmt(need)} kamas${x.bud && need > x.free ? ` · <span class="neg">plus que tes ${fmt(x.free)} kamas</span>` : ""}. La série ira dans « Mes séries », où tu noteras la mise en vente puis les ventes.`;
+  $("#cGoNote").innerHTML = (nUp && !x.miss && x.pv ? `<span class="neg">${nUp} ressource${nUp > 1 ? "s" : ""} plus chère${nUp > 1 ? "s" : ""} que d'habitude (voir l'étape 3).</span> ` : "") + (x.miss ? "Complète d'abord les prix des ressources (étape 3)." : !x.pv ? "Indique le prix de vente (étape 4)." : `Ça t'engage ${fmt(need)} kamas${x.bud && need > x.free ? ` · <span class="neg">plus que tes ${fmt(x.free)} kamas</span>` : ""}. La série ira dans « Mes séries », où tu noteras la mise en vente puis les ventes.`);
   $("#cGo").disabled = !!x.miss || !x.pv;
 }
 function calcPick(id) { calcId = id; lsSet("calcItem", String(id)); $("#cSearch").value = ""; $("#cResults").hidden = true; $("#cQ").value = 1; renderCalc(); applyRO(); setTimeout(() => (document.querySelector("#cIng input.miss") || $("#cPv")).focus(), 0); }
@@ -1299,6 +1317,12 @@ document.addEventListener("input", e => {
 document.addEventListener("change", e => { const t = e.target; if (t.dataset?.lot && isMe()) deferRender(); });
 function setPrice(rid, v) {
   pendingPrix.add("prix:" + rid); const n = +v || 0;
+  // historique des prix (un prix par jour, les 30 derniers) : sert à prévenir quand j'achète plus cher que d'habitude
+  if (!S.ph) S.ph = {};
+  let h = (S.ph[rid] || []).slice(); const old = +S.prix[rid], oldD = S.maj[rid];
+  if (!h.length && old > 0 && oldD && oldD !== today()) h.push([oldD, old]);
+  h = h.filter(([d]) => d !== today()); if (n > 0) h.push([today(), n]);
+  if (h.length) S.ph[rid] = h.slice(-30); else delete S.ph[rid];
   if (n > 0) S.prix[rid] = n; else delete S.prix[rid]; S.maj[rid] = today();
   later("prix", () => Store.savePrix());
 }
@@ -1624,7 +1648,7 @@ $("#btnReset").addEventListener("click", async () => {
     // anciennes séries rangées une par une (versions précédentes) : on les supprime aussi
     const old = await db.collection(`profiles/${ME}/journal`).get(), ids = old.docs.map(d => d.id);
     for (let i = 0; i < ids.length; i += 400) { const b = db.batch(); ids.slice(i, i + 400).forEach(id => b.delete(db.doc(`profiles/${ME}/journal/${id}`))); await b.commit(); }
-    Object.assign(me, { prix: {}, maj: {}, rp: {}, rm: {}, rpt: {}, rec: {}, xp: {}, xw: {}, xws: "", pl: [], suivi: [], journal: [] });
+    Object.assign(me, { prix: {}, maj: {}, ph: {}, rp: {}, rm: {}, rpt: {}, rec: {}, xp: {}, xw: {}, xws: "", pl: [], suivi: [], journal: [] });
     const wasView = VIEW; VIEW = ME; S = me; pendingPrix.clear(); Store.savePrix(); Store.saveSuivi(); Store.saveJournal(); cartSet([]); VIEW = wasView; S = member(VIEW);
     Object.keys(frozen).forEach(x => delete frozen[x]);
     $("#resetTxt").value = ""; $("#dataPanel").hidden = true; render(); toast("Tout est vidé : page vierge");
