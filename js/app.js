@@ -744,7 +744,7 @@ const jrWhen = e => e.ts ? new Date(e.ts) : pD(e.achat);
 function renderCalcHist() {
   const me = isMe(), all = S.journal.filter(e => (e.src || "craft") === "craft").sort((a, b) => (jrWhen(b)?.getTime() || 0) - (jrWhen(a)?.getTime() || 0));
   const moi = e => e.moi !== false, nMoi = all.filter(moi).length;
-  const L = calcHistF === "moi" ? all.filter(moi) : calcHistF === "autre" ? all.filter(e => !moi(e)) : all;
+  const L = calcHistF === "moi" ? all.filter(moi) : calcHistF === "autre" ? all.filter(e => !moi(e)) : calcHistF === "open" ? all.filter(e => !isDone(e)) : all;
   $("#cHistSub").textContent = all.length ? `${fmt(all.length)} craft${all.length > 1 ? "s" : ""} · ${fmt(nMoi)} par moi · ${fmt(all.length - nMoi)} pas par moi` : "";
   document.querySelectorAll("[data-chf]").forEach(b => b.classList.toggle("on", b.dataset.chf === calcHistF));
   $("#cHist").innerHTML = L.length ? L.map(e => { const d = jrWhen(e); return `<tr>
@@ -752,10 +752,21 @@ function renderCalcHist() {
     <td class="l"><b>${esc(e.nom || ITEMS.get(e.item)?.n || "?")}</b></td>
     <td class="m">${fmt(+e.qte || 0)}</td>
     <td class="m">${fmt(+e.cout || 0)}</td>
-    <td class="l"><label class="chk"><input type="checkbox" data-moi="${e._id}" ${moi(e) ? "checked" : ""} ${me ? "" : "disabled"} aria-label="Crafté par moi : ${esc(e.nom || "")}"><span>${moi(e) ? "oui" : "non"}</span></label></td></tr>`; }).join("")
-    : `<tr><td class="l note" colspan="5">${all.length ? "Aucun craft avec ce filtre." : "Rien pour l'instant : chaque craft lancé avec « C'est parti » apparaîtra ici."}</td></tr>`;
+    <td class="l"><label class="chk"><input type="checkbox" data-moi="${e._id}" ${moi(e) ? "checked" : ""} ${me ? "" : "disabled"} aria-label="Crafté par moi : ${esc(e.nom || "")}"><span>${moi(e) ? "oui" : "non"}</span></label></td>
+    <td class="l hsell"><span class="status ${seriesStep(e)[0]}">${seriesStep(e)[1]}</span>${me ? seriesActs(e, "data-quick") : ""}${isDone(e) && +e.encaisse ? `<small class="note">${fmt(+e.encaisse)} encaissés</small>` : ""}</td></tr>`; }).join("")
+    : `<tr><td class="l note" colspan="6">${all.length ? "Aucun craft avec ce filtre." : "Rien pour l'instant : chaque craft lancé avec « C'est parti » apparaîtra ici."}</td></tr>`;
 }
 document.addEventListener("click", e => { const b = e.target.closest("[data-chf]"); if (!b) return; calcHistF = b.dataset.chf; lsSet("calcHistF", calcHistF); renderCalcHist(); });
+$("#cHist").addEventListener("click", e => { const q = e.target.closest("[data-quick]"); if (q && isMe()) quickJr(q.dataset.jid, q.dataset.quick); });
+// rappel sur « Calculer » : crafts lancés depuis plus de 3 jours et pas encore notés comme vendus
+const REMIND_DAYS = 3;
+function renderRemind() {
+  const L = isMe() ? S.journal.filter(e => (e.src || "craft") === "craft" && !isDone(e) && ageDays(e.achat) > REMIND_DAYS) : [], n = L.length, box = $("#cRemind");
+  box.hidden = !n; if (!n) return;
+  const k = L.reduce((a, e) => a + coutT(e), 0);
+  box.innerHTML = `<span><b>${n} craft${n > 1 ? "s" : ""} pas encore noté${n > 1 ? "s" : ""} comme vendu${n > 1 ? "s" : ""}</b> depuis plus de ${REMIND_DAYS} jours (${fmt(k)} kamas engagés). Si tu les as vendus, note-le pour que ton bénéfice soit juste.</span><button type="button" class="quick" id="cRemindGo">Voir la liste</button>`;
+}
+document.addEventListener("click", e => { if (e.target.closest("#cRemindGo")) { calcHistF = "open"; lsSet("calcHistF", "open"); setTab("hist"); window.scrollTo({ top: 0 }); } });
 document.addEventListener("change", e => {
   const t = e.target; if (!t.dataset?.moi || !isMe()) return;
   const e0 = S.journal.find(j => j._id === t.dataset.moi); if (e0) e0.moi = t.checked;
@@ -764,6 +775,7 @@ document.addEventListener("change", e => {
 $("#cMoi").checked = lsGet("calcMoi") !== "0";
 $("#cMoi").addEventListener("change", e => lsSet("calcMoi", e.target.checked ? "1" : "0"));
 function renderCalc() {
+  renderRemind();
   const me = isMe(), x = calcState(), bud = +lsGet("budget") || 0;
   if (document.activeElement !== $("#cBud")) $("#cBud").value = bud ? lotFmt(bud) : "";
   const rec = calcRecent().filter(id => id !== calcId && ITEMS.has(id)).slice(0, 5);

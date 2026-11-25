@@ -132,6 +132,7 @@
       <!-- CALCULER UN CRAFT : à gauche l'item et ses ressources, à droite mon craft (toujours visible) -->
       <section id="v-calc" class="calc2" hidden>
         <div class="cl-main stack">
+          <div class="cremind" id="cRemind" hidden></div>
           <div class="panel cstep2">
             <h2>L'item que je regarde</h2>
             <div class="search own-only" style="max-width:none"><input id="cSearch" type="search" placeholder="Nom de l'item, ex. Aprybou" autocomplete="off" aria-label="Chercher l'item à calculer"><ul class="results" id="cResults" hidden></ul></div>
@@ -170,8 +171,9 @@
             <button type="button" class="ghost" data-chf="all">Tous</button>
             <button type="button" class="ghost" data-chf="moi">Craftés par moi</button>
             <button type="button" class="ghost" data-chf="autre">Pas par moi</button>
+            <button type="button" class="ghost" data-chf="open">Pas encore vendus</button>
           </div>
-          <div class="tbl-wrap"><table class="t-calc t-hist"><thead><tr><th class="l">Date</th><th class="l">Item</th><th>Qté</th><th>Coût</th><th class="l">Crafté par moi</th></tr></thead><tbody id="cHist"></tbody></table></div>
+          <div class="tbl-wrap"><table class="t-calc t-hist"><thead><tr><th class="l">Date</th><th class="l">Item</th><th>Qté</th><th>Coût</th><th class="l">Crafté par moi</th><th class="l">Vente</th></tr></thead><tbody id="cHist"></tbody></table></div>
         </div>
       </section>
 
