@@ -569,6 +569,9 @@ td.acts .quick+.quick,td.l .quick+.quick{margin-left:6px}
 :root{--fm:#7c3aed;--fm-soft:#f1eafe}
 @media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--fm:#b794f6;--fm-soft:#2a1f45}}
 :root[data-theme="dark"]{--fm:#b794f6;--fm-soft:#2a1f45}
+.fmfield{margin-top:12px}.fmfield label{color:var(--fm)}.fmfield label small{text-transform:none;letter-spacing:0;font-weight:500}
+.fmfield input{border-color:color-mix(in srgb,var(--fm) 45%,var(--line-2))}.fmfield input:focus{border-color:var(--fm);box-shadow:0 0 0 3px color-mix(in srgb,var(--fm) 20%,transparent)}
+.csum>div.fmrow span,.csum>div.fmrow b{color:var(--fm)}
 .fmc{display:block;color:var(--fm);font-weight:600;font-size:11.5px;margin-top:2px}
 .quick.fmq{color:var(--fm);border-color:color-mix(in srgb,var(--fm) 40%,transparent)}
 .fmedit{display:flex;gap:4px;justify-content:flex-end;margin-top:4px}.fmedit input{width:110px;border-color:var(--fm);background:var(--fm-soft)}

@@ -734,9 +734,10 @@ function calcState() {
   const it = ITEMS.get(calcId); if (!it) return null;
   const s = S.suivi.find(x => x.id === calcId) || { id: calcId };
   let cost = 0, miss = 0; const lines = recipeOf(s).map(([rid, q]) => { const pi = priceInfo(rid); if (pi.v == null) miss++; else cost += pi.v * q; return { rid, q, pi }; });
-  const pv = +s.pv || 0, net = pv * (1 - taxe()), ben = miss || !pv ? null : net - cost;
+  const fm = +s.fm || 0; // runes ajoutées sur chaque item avant la vente (forgemagie)
+  const pv = +s.pv || 0, net = pv * (1 - taxe()), ben = miss || !pv ? null : net - cost - fm;
   const bud = +lsGet("budget") || 0, free = bud; // les kamas que j'ai en poche : les ventes en cours sont déjà payées
-  return { it, s, lines, cost, miss, pv, net, ben, bud, free, canDo: !miss && cost > 0 ? Math.floor(free / cost) : null };
+  return { it, s, lines, cost, fm, miss, pv, net, ben, bud, free, canDo: !miss && cost + fm > 0 ? Math.floor(free / (cost + fm)) : null };
 }
 // liste de tout ce que j'ai crafté (séries obtenues en craftant), la plus récente en haut
 let calcHistF = lsGet("calcHistF") || "all";
@@ -804,6 +805,7 @@ function renderCalc() {
       <td class="m" id="cl-${l.rid}">${l.pi.v != null ? fmt(l.pi.v * l.q) : "–"}</td></tr>`; }).join("") + `<tr class="ctot"><td class="l" colspan="4"><b>Coût d'un craft</b></td><td class="m"><b id="cCost">${x.miss ? `<span class="miss-t">il manque ${x.miss} prix</span>` : fmt(x.cost)}</b></td></tr>`;
   });
   if (document.activeElement !== $("#cPv")) $("#cPv").value = x.pv ? lotFmt(x.pv) : "";
+  if (document.activeElement !== $("#cFm")) $("#cFm").value = x.fm ? lotFmt(x.fm) : "";
   calcTotals();
 }
 function calcTotals() {
@@ -818,15 +820,16 @@ function calcTotals() {
   });
   const nUp = x.lines.filter(l => priceAlert(l.rid)?.up).length;
   $("#cPvNote").textContent = x.pv ? `Après la taxe HDV de ${Math.round(taxe() * 1000) / 10} % : ${fmt(x.net)} pour toi.` : "";
-  const roi = x.ben != null && x.cost ? x.ben / x.cost : null;
+  const roi = x.ben != null && x.cost + x.fm ? x.ben / (x.cost + x.fm) : null;
   $("#cSum").innerHTML = `
-    <div><span>Coût d'un craft</span><b>${x.miss ? "?" : fmt(x.cost)}</b></div>
+    <div><span>Coût d'un craft</span><b>${x.miss ? "?" : fmt(x.cost)}</b></div>${x.fm ? `
+    <div class="fmrow"><span>Runes ajoutées</span><b>+ ${fmt(x.fm)}</b></div>` : ""}
     <div><span>Vente (taxe déduite)</span><b>${x.pv ? fmt(x.net) : "?"}</b></div>
     <div><span>Bénéfice par craft</span><b class="${x.ben < 0 ? "neg" : x.ben > 0 ? "pos" : ""}">${x.ben != null ? `${x.ben > 0 ? "+" : ""}${fmt(x.ben)} <small>(${pillTxt(roi)})</small>` : "?"}</b></div>
     <div><span>J'en crafte au plus</span><b>${x.canDo != null && x.bud ? fmt(x.canDo) : "?"}</b></div>`;
   const q = Math.max(1, Math.round(+$("#cQ").value || 1));
   $("#cBen").textContent = x.ben != null ? `${x.ben * q > 0 ? "+" : ""}${fmt(x.ben * q)}` : "–"; $("#cBen").style.color = x.ben == null ? "" : x.ben < 0 ? "var(--bad)" : "var(--good)";
-  const need = x.miss ? null : x.cost * q;
+  const need = x.miss ? null : (x.cost + x.fm) * q;
   $("#cGoNote").innerHTML = (nUp && !x.miss && x.pv ? `<span class="neg">${nUp} ressource${nUp > 1 ? "s" : ""} plus chère${nUp > 1 ? "s" : ""} que d'habitude (voir les ressources).</span> ` : "") + (x.miss ? "Complète d'abord les prix des ressources." : !x.pv ? "Indique le prix de vente juste au-dessus." : `Ça t'engage ${fmt(need)} kamas${x.bud && need > x.free ? ` · <span class="neg">plus que tes ${fmt(x.free)} kamas</span>` : ""}. Le craft ira dans « Mes crafts ».`);
   $("#cGo").disabled = !!x.miss || !x.pv;
 }
@@ -854,18 +857,19 @@ $("#cQ").addEventListener("input", calcTotals);
 $("#v-calc").addEventListener("input", e => {
   const t = e.target; if (!isMe()) return;
   if (t.dataset.cp) { const v = lotParse(t.value); if (v == null) return; const lot = calcLot[t.dataset.cp] || 1; setPrice(t.dataset.cp, v / lot); t.classList.toggle("miss", !(v > 0)); t.classList.remove("grp"); calcTotals(); return; }
+  if (t.id === "cFm") { const v = lotParse(t.value || "0"); if (v == null) return; let s = S.suivi.find(x => x.id === calcId); if (!s) { s = { id: calcId, brk: 0 }; S.suivi.push(s); } s.fm = Math.max(0, Math.round(v)); saveSuiviLater(); calcTotals(); return; }
   if (t.id === "cPv") { const v = lotParse(t.value); if (v == null) return; let s = S.suivi.find(x => x.id === calcId); if (!s) { s = { id: calcId, brk: 0 }; S.suivi.push(s); } s.pv = v; s.mv = today(); saveSuiviLater(); calcTotals(); }
 });
 $("#v-calc").addEventListener("change", e => {
   const t = e.target;
   if (t.dataset.clot) { calcLot[t.dataset.clot] = +t.value; renderCalc(); applyRO(); return; }
-  if (t.dataset.cp || t.id === "cPv") deferRender();
+  if (t.dataset.cp || t.id === "cPv" || t.id === "cFm") deferRender();
 });
 $("#cGo").addEventListener("click", () => {
   const x = calcState(); if (!x || x.miss || !x.pv || !isMe()) return; const q = Math.max(1, Math.round(+$("#cQ").value || 1));
   if (!S.suivi.some(s => s.id === calcId)) { S.suivi.push({ id: calcId, brk: 0, pv: x.pv, mv: today() }); Store.saveSuivi(); }
-  Store.addJr({ item: calcId, nom: x.it.n, qte: q, cout: Math.round(x.cost * q), achat: today(), brisage: "", runes: 0, vente: "", encaisse: 0, src: "craft", dest: "revente", ts: new Date().toISOString(), moi: $("#cMoi").checked });
-  toast(`${q} × ${x.it.n} lancé${q > 1 ? "s" : ""} : à suivre dans « Mes séries »`);
+  Store.addJr({ item: calcId, nom: x.it.n, qte: q, cout: Math.round(x.cost * q), ...(x.fm ? { fm: Math.round(x.fm * q) } : {}), achat: today(), brisage: "", runes: 0, vente: "", encaisse: 0, src: "craft", dest: "revente", ts: new Date().toISOString(), moi: $("#cMoi").checked });
+  toast(`${q} × ${x.it.n} lancé${q > 1 ? "s" : ""} : à suivre dans « Mes crafts »`);
 });
 
 // ----- Catalogue : toutes les recettes du jeu, avec filtres (catégorie, type, métier, niveau, nom)
