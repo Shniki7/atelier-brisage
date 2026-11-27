@@ -154,8 +154,8 @@ function seriesStep(e) {
 // Une série est terminée quand tout est vendu (e.fini). Anciennes séries : dès qu'un montant encaissé est saisi.
 function isDone(e) { return e.fini === true || (e.fini === undefined && !e.ventes && +e.encaisse > 0); }
 function realize(e) { return isDone(e) ? { date: e.vente || e.brisage || e.achat, ventes: +e.encaisse || 0 } : null; }
-// coût total = achat ou craft + taxes de mise en vente payées (chaque remise en vente repaie la taxe)
-function coutT(e) { return (+e.cout || 0) + (+e.frais || 0); }
+// coût total = achat ou craft + runes ajoutées en forgemagie + taxes de mise en vente payées (chaque remise en vente repaie la taxe)
+function coutT(e) { return (+e.cout || 0) + (+e.fm || 0) + (+e.frais || 0); }
 const vendusQ = e => (e.ventes || []).reduce((a, v) => a + (+v.q || 0), 0);
 function latent(e, M = S) { return !isDone(e) && +e.runes > 0 ? Math.round(+e.runes * (1 - taxe(M))) : null; }
 function byItem(list) {
@@ -751,13 +751,25 @@ function renderCalcHist() {
     <td class="l m">${d ? d.toLocaleDateString("fr-FR", { day: "2-digit", month: "2-digit", year: "numeric" }) + (e.ts ? " · " + d.toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit" }) : "") : "–"}</td>
     <td class="l"><b>${esc(e.nom || ITEMS.get(e.item)?.n || "?")}</b></td>
     <td class="m">${fmt(+e.qte || 0)}</td>
-    <td class="m">${fmt(+e.cout || 0)}</td>
+    <td class="m">${fmt(+e.cout || 0)}${+e.fm > 0 ? `<small class="fmc" title="Runes ajoutées sur l'item (forgemagie)">+ ${fmt(+e.fm)} runes</small>` : ""}${fmOpen.has(e._id) ? `<span class="fmedit"><input class="num" data-fmin="${e._id}" type="text" inputmode="decimal" placeholder="ex. 1,2m" value="${+e.fm > 0 ? lotFmt(+e.fm) : ""}" aria-label="Coût total des runes ajoutées"><button type="button" class="quick fmq" data-fmok="${e._id}">OK</button></span>` : ""}</td>
     <td class="l"><label class="chk"><input type="checkbox" data-moi="${e._id}" ${moi(e) ? "checked" : ""} ${me ? "" : "disabled"} aria-label="Crafté par moi : ${esc(e.nom || "")}"><span>${moi(e) ? "oui" : "non"}</span></label></td>
-    <td class="l hsell"><span class="status ${seriesStep(e)[0]}">${seriesStep(e)[1]}</span>${me ? seriesActs(e, "data-quick") : ""}${isDone(e) && +e.encaisse ? `<small class="note">${fmt(+e.encaisse)} encaissés</small>` : ""}</td></tr>`; }).join("")
+    <td class="l hsell"><span class="status ${seriesStep(e)[0]}">${seriesStep(e)[1]}</span>${me && !isDone(e) && !fmOpen.has(e._id) ? `<button type="button" class="quick fmq" data-fm="${e._id}" title="Runes ajoutées sur l'item avant la vente : leur coût s'ajoute au coût du craft">${+e.fm > 0 ? "Runes…" : "+ Runes"}</button>` : ""}${me ? seriesActs(e, "data-quick") : ""}${isDone(e) && +e.encaisse ? `<small class="note">${fmt(+e.encaisse)} encaissés</small>` : ""}</td></tr>`; }).join("")
     : `<tr><td class="l note" colspan="6">${all.length ? "Aucun craft avec ce filtre." : "Rien pour l'instant : chaque craft lancé avec « C'est parti » apparaîtra ici."}</td></tr>`;
 }
 document.addEventListener("click", e => { const b = e.target.closest("[data-chf]"); if (!b) return; calcHistF = b.dataset.chf; lsSet("calcHistF", calcHistF); renderCalcHist(); });
-$("#cHist").addEventListener("click", e => { const q = e.target.closest("[data-quick]"); if (q && isMe()) quickJr(q.dataset.jid, q.dataset.quick); });
+$("#cHist").addEventListener("click", e => {
+  const q = e.target.closest("[data-quick]"); if (q && isMe()) { quickJr(q.dataset.jid, q.dataset.quick); return; }
+  const f = e.target.closest("[data-fm]"); if (f && isMe()) { fmOpen.add(f.dataset.fm); renderCalcHist(); document.querySelector(`[data-fmin="${f.dataset.fm}"]`)?.focus(); return; }
+  const ok = e.target.closest("[data-fmok]"); if (ok) fmSave(ok.dataset.fmok);
+});
+$("#cHist").addEventListener("keydown", e => { const i = e.target.closest("[data-fmin]"); if (!i) return; if (e.key === "Enter") { e.preventDefault(); fmSave(i.dataset.fmin); } if (e.key === "Escape") { fmOpen.delete(i.dataset.fmin); renderCalcHist(); } });
+// forgemagie : coût global des runes ajoutées sur l'item avant de le vendre (compté dans le coût de la série)
+const fmOpen = new Set();
+function fmSave(id) {
+  const e = S.journal.find(j => j._id === id), i = document.querySelector(`[data-fmin="${id}"]`); fmOpen.delete(id);
+  if (e && i && isMe()) { const v = Math.max(0, Math.round(lotParse(i.value) || 0)); e.fm = v; Store.updJr(id, { fm: v }); toast(v ? `Runes ajoutées : ${fmt(v)} comptés dans le coût` : "Coût des runes retiré"); }
+  render();
+}
 // rappel sur « Calculer » : crafts lancés depuis plus de 3 jours et pas encore notés comme vendus
 const REMIND_DAYS = 3;
 function renderRemind() {
