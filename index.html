@@ -95,7 +95,6 @@
           <button role="tab" aria-selected="false" data-tab="res"><svg class="i"><use href="#i-res"/></svg><span class="lab">Prix du marché</span><span class="count" id="cRes">0</span></button>
           <button role="tab" aria-selected="false" data-tab="cat"><svg class="i"><use href="#i-book"/></svg><span class="lab">Catalogue</span></button>
           <button role="tab" aria-selected="false" data-tab="crafts"><svg class="i"><use href="#i-craft"/></svg><span class="lab">Opportunités</span><span class="count" id="cCrafts">0</span></button>
-          <button role="tab" aria-selected="false" data-tab="jr"><svg class="i"><use href="#i-jr"/></svg><span class="lab">Mes séries</span><span class="count" id="cJr">0</span></button>
           <button role="tab" aria-selected="false" data-tab="dash"><svg class="i"><use href="#i-dash"/></svg><span class="lab">Résultats</span></button>
           <button role="tab" aria-selected="false" data-tab="grp"><svg class="i"><use href="#i-grp"/></svg><span class="lab">Le groupe</span><span class="count" id="cGrp">0</span></button>
           <button role="tab" aria-selected="false" data-tab="pet"><svg class="i"><use href="#i-paw"/></svg><span class="lab">Familiers</span></button>
@@ -275,8 +274,9 @@
           <span><b>Données d'exemple.</b> Ton journal est vide : voici à quoi ressemblera ton tableau de bord. Tes vraies séries remplacent l'exemple dès la première saisie.</span>
           <button type="button" id="demoToggle">Masquer l'exemple</button>
         </div>
+        <div class="panel empty-state" id="dashEmpty" hidden></div>
         <div class="kpis" id="kpis"></div>
-        <div class="dgrid">
+        <div class="dgrid" id="dashGrid">
           <div class="panel span2">
             <div class="panel-head"><h2 id="hBen">Bénéfice par semaine</h2>
               <div class="legend"><span><i style="background:var(--good)"></i>Bénéfice</span><span><i style="background:var(--bad)"></i>Perte</span></div></div>
@@ -314,12 +314,13 @@
           </div>
           <span class="note">Clique sur un membre pour ouvrir son profil.</span>
         </div>
+        <div class="panel empty-state" id="grpEmpty" hidden></div>
         <div class="dgrid">
-          <div class="panel">
+          <div class="panel" id="grpBarP">
             <div class="panel-head"><h2 id="hGrpBar">Classement</h2></div>
             <div id="grpBars"></div>
           </div>
-          <div class="panel span2">
+          <div class="panel span2" id="grpChP">
             <div class="panel-head"><h2>Bénéfice cumulé · 12 semaines</h2><div class="legend" id="grpLegend"></div></div>
             <div class="chart-box"><canvas id="chGrp" role="img" aria-label="Bénéfice cumulé de chaque membre sur 12 semaines"></canvas></div>
           </div>
@@ -327,7 +328,7 @@
             <div class="panel-head"><h2>Bilans</h2></div>
             <div class="tbl-wrap">
               <table class="t-grp">
-                <thead><tr><th class="l">Membre</th><th>Bénéfice</th><th>Ventes</th><th>Rendement</th><th>Séries vendues</th><th>Capital en stock</th><th class="l">Meilleur item</th><th class="l">Dernière activité</th></tr></thead>
+                <thead><tr><th class="l">Membre</th><th>En cours</th><th>Bénéfice</th><th>Ventes</th><th>Rendement</th><th>Séries vendues</th><th class="l">Meilleur item</th><th class="l">Dernière activité</th></tr></thead>
                 <tbody id="grpRows"></tbody>
               </table>
             </div>
@@ -560,7 +561,7 @@
       <div><kbd>Maj</kbd> + <kbd>Tab</kbd></div><div>Case précédente dans la même colonne</div>
       <div><kbd>↑</kbd> <kbd>↓</kbd></div><div>Monter ou descendre dans une colonne de nombres</div>
       <div class="kh">Partout</div>
-      <div><kbd>0</kbd> à <kbd>5</kbd></div><div>Mes kamas, Prix du marché, Opportunités, Mes séries, Résultats, Groupe</div>
+      <div><kbd>0</kbd> à <kbd>5</kbd></div><div>Mes kamas, Prix du marché, Opportunités, Mes crafts, Résultats, Groupe</div>
       <div><kbd>/</kbd></div><div>Chercher un item à suivre</div>
       <div><kbd>N</kbd></div><div>Nouvelle série dans le journal</div>
       <div><kbd>B</kbd> / <kbd>V</kbd></div><div>Journal : marquer la ligne sélectionnée Brisé / Vendu</div>

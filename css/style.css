@@ -253,7 +253,7 @@ tr.detail>td{background:var(--sunk);padding:14px 10px 18px;cursor:default;text-a
 .kpi .k-l i{width:8px;height:8px;border-radius:2px;display:inline-block}
 .kpi .k-v{font-family:var(--display);font-weight:700;font-size:24px;font-variant-numeric:tabular-nums;overflow-wrap:anywhere;line-height:1.15;letter-spacing:-.02em}
 .kpi .k-v small{white-space:nowrap;font-size:13px;color:var(--muted);font-weight:500;margin-left:4px;letter-spacing:0}
-.kpi.hero{background:linear-gradient(150deg,color-mix(in srgb,var(--good) 14%,var(--surface)),var(--surface) 70%);border-color:color-mix(in srgb,var(--good) 30%,var(--line))}
+.kpi.hero{background:var(--surface)}
 .kpi.hero .k-v{font-size:28px;color:var(--good)}
 .kpi.hero .k-v.neg{color:var(--bad)}
 .kpi .k-d{font-size:12px;color:var(--muted)}
@@ -299,7 +299,7 @@ tr.detail>td{background:var(--sunk);padding:14px 10px 18px;cursor:default;text-a
 .gbar .track{position:relative;height:12px}
 .gbar .fill{position:absolute;top:0;bottom:0;border-radius:4px}
 .gbar .axis{position:absolute;top:-4px;bottom:-4px;width:1px;background:var(--line-2)}
-.gbar .v{font-family:var(--mono);font-weight:600;text-align:right}
+.gbar .v{font-family:var(--mono);font-weight:600;text-align:right;color:var(--fg)}
 .gbar .nm{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-weight:500}
 
 /* ---------- fenêtre « Mes données » ---------- */
@@ -597,3 +597,18 @@ body.ro .own-only{display:none!important}
 .toast{position:fixed;left:50%;bottom:calc(22px + env(safe-area-inset-bottom,0px));transform:translateX(-50%) translateY(6px);background:var(--fg);color:var(--bg);padding:9px 16px;border-radius:9px;font-size:13px;font-weight:500;opacity:0;transition:opacity .2s,transform .2s;pointer-events:none;z-index:50;box-shadow:var(--shadow-lg)}
 .toast.show{opacity:1;transform:translateX(-50%)}
 @media (prefers-reduced-motion:reduce){*{transition:none!important}}
+
+/* ---- harmonisation : états vides, statuts discrets, bénéfice mis en avant */
+.kpis[hidden],.dgrid[hidden],.seg[hidden],.panel[hidden],.note[hidden]{display:none!important}
+.empty-state{padding:28px;gap:10px}
+.empty-state .es-t{font-family:var(--display);font-size:19px;font-weight:700}
+.empty-state p{margin:0;color:var(--fg-2);max-width:680px;line-height:1.55}
+.empty-state .es-a{margin-top:6px}
+.es-m{display:flex;flex-wrap:wrap;gap:10px;margin-top:6px}
+.es-card{display:flex;align-items:center;gap:10px;padding:10px 14px;border:1px solid var(--line);border-radius:10px;background:var(--surface);text-align:left;cursor:pointer;font-weight:400}
+.es-card:hover{border-color:var(--line-2);background:var(--surface-2)}
+.es-card b{display:block;font-size:13.5px}.es-card small{color:var(--muted);font-family:var(--mono);font-size:12px}
+/* statuts : un point de couleur et du texte, pour ne plus les confondre avec les boutons */
+.status{background:transparent!important;padding:3px 0;margin-right:6px}
+/* bénéfice total : fond vert si gagné, rouge si perdu */
+.tot.is-pos{background:var(--good-soft)}.tot.is-neg{background:var(--bad-soft)}

@@ -377,6 +377,7 @@ function setTab(t) {
   tab = t; lsSet("tab", t);
   $("#pageTitle").textContent = TITLES[t][0]; $("#pageSub").textContent = TITLES[t][1];
   document.querySelectorAll("nav [data-tab]").forEach(x => x.setAttribute("aria-selected", x.dataset.tab === t));
+  if (t === "jr") t = tab = "hist"; // « Mes séries » est fusionné dans « Mes crafts »
   ["calc", "hist", "home", "dash", "grp", "cat", "crafts", "res", "jr", "pet"].forEach(x => $("#v-" + x).hidden = x !== t);
   if (!["calc", "hist"].includes(t)) navMore(true);
   if (t === "dash") lsSet("lastDash", today());
@@ -396,9 +397,8 @@ function render() {
   const nMiss = neededRes().filter(([rid]) => priceInfo(rid).v == null).length + neededRunes().filter(([a]) => runePriceInfo(a).v == null).length;
   $("#cRes").textContent = nMiss || "✓"; $("#cRes").title = nMiss ? `${nMiss} prix à compléter` : "Tous les prix sont renseignés";
   const nRun = S.journal.filter(e => !isDone(e)).length;
-  $("#cJr").textContent = nRun; $("#cJr").title = `${nRun} série(s) en cours`;
+  $("#cHistN").textContent = nRun; $("#cHistN").title = `${nRun} en cours (pas encore vendu${nRun > 1 ? "s" : ""})`;
   if (tab === "home") renderHome();
-  $("#cHistN").textContent = S.journal.filter(e => (e.src || "craft") === "craft").length;
   if (tab === "calc") renderCalc();
   if (tab === "hist") renderCalcHist();
   if (tab === "pet") renderPet();
@@ -631,7 +631,7 @@ function renderHome() {
       <td class="m">${fmt(coutT(e))}</td>
       <td class="l"><span class="status ${seriesStep(e)[0]}">${seriesStep(e)[1]}</span></td>
       <td class="acts">${me ? seriesActs(e, "data-hquick") : ""}</td></tr>`;
-  }).join("") + (todo.length > 12 ? `<tr><td colspan="4" class="note"><button class="linkish" data-goto="jr" type="button">Voir les ${todo.length} séries</button></td></tr>` : "")
+  }).join("") + (todo.length > 12 ? `<tr><td colspan="4" class="note"><button class="linkish" data-goto="hist" type="button">Voir les ${todo.length} séries</button></td></tr>` : "")
     : `<tr><td class="empty">Rien en cours. Clique « Lancer » sur une ligne de l'étape 2.</td></tr>`;
   // 4. ligne d'arrivée
   document.querySelectorAll("#homePer [data-hp]").forEach(b => b.setAttribute("aria-pressed", b.dataset.hp === homePer));
@@ -752,7 +752,7 @@ function renderGroupOpen() {
   $("#gOpen").innerHTML = rows.length ? rows.map(({ uid, m, e }) => { const d = jrWhen(e), st = seriesStep(e); return `<tr>
     <td class="l"><button type="button" class="gmem" data-gview="${uid}"><span class="avatar sm" style="background:${colorOf(uid)}">${esc(initials(m.p.pseudo))}</span>${esc(m.p.pseudo)}</button></td>
     <td class="l m">${d ? d.toLocaleDateString("fr-FR", { day: "2-digit", month: "2-digit" }) : "–"}</td>
-    <td class="l"><b>${esc(e.nom || ITEMS.get(e.item)?.n || "?")}</b></td>
+    <td class="l"><b>${esc(e.nom || ITEMS.get(e.item)?.n || "?")}</b>${(e.src || "craft") !== "craft" || (e.dest && e.dest !== "revente") ? `<small class="note" style="display:block">${stratTxt(stratOf(e.src, e.dest))}</small>` : ""}</td>
     <td class="m">${fmt(+e.qte || 0)}</td>
     <td class="m">${fmt(+e.cout || 0)}${+e.fm > 0 ? `<small class="fmc">+ ${fmt(+e.fm)} runes</small>` : ""}</td>
     <td class="l"><span class="status ${st[0]}">${st[1]}</span>${+e.lv > 0 ? `<small class="note" style="display:block">${fmt(+e.lv)} en HDV</small>` : ""}</td></tr>`; }).join("")
@@ -763,14 +763,14 @@ function renderCalcHist() {
   renderGroupOpen();
   $("#gOpenP").hidden = !isMe();
   $("#cHistT").textContent = isMe() ? "Mes crafts" : `Crafts de ${S.p?.pseudo || "?"}`;
-  const me = isMe(), all = S.journal.filter(e => !me || (e.src || "craft") === "craft").sort((a, b) => (jrWhen(b)?.getTime() || 0) - (jrWhen(a)?.getTime() || 0));
+  const me = isMe(), all = S.journal.slice().sort((a, b) => (jrWhen(b)?.getTime() || 0) - (jrWhen(a)?.getTime() || 0));
   const moi = e => e.moi !== false, nMoi = all.filter(moi).length;
   const L = calcHistF === "moi" ? all.filter(moi) : calcHistF === "autre" ? all.filter(e => !moi(e)) : calcHistF === "open" ? all.filter(e => !isDone(e)) : all;
   $("#cHistSub").textContent = all.length ? `${fmt(all.length)} craft${all.length > 1 ? "s" : ""} · ${fmt(nMoi)} par moi · ${fmt(all.length - nMoi)} pas par moi` : "";
   document.querySelectorAll("[data-chf]").forEach(b => b.classList.toggle("on", b.dataset.chf === calcHistF));
   $("#cHist").innerHTML = L.length ? L.map(e => { const d = jrWhen(e); return `<tr>
     <td class="l m">${d ? d.toLocaleDateString("fr-FR", { day: "2-digit", month: "2-digit", year: "numeric" }) + (e.ts ? " · " + d.toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit" }) : "") : "–"}</td>
-    <td class="l"><b>${esc(e.nom || ITEMS.get(e.item)?.n || "?")}</b></td>
+    <td class="l"><b>${esc(e.nom || ITEMS.get(e.item)?.n || "?")}</b>${(e.src || "craft") !== "craft" || (e.dest && e.dest !== "revente") ? `<small class="note" style="display:block">${stratTxt(stratOf(e.src, e.dest))}</small>` : ""}</td>
     <td class="m">${fmt(+e.qte || 0)}</td>
     <td class="m">${fmt(+e.cout || 0)}${+e.fm > 0 ? `<small class="fmc" title="Runes ajoutées sur l'item (forgemagie)">+ ${fmt(+e.fm)} runes</small>` : ""}${fmOpen.has(e._id) ? `<span class="fmedit"><input class="num" data-fmin="${e._id}" type="text" inputmode="decimal" placeholder="ex. 1,2m" value="${+e.fm > 0 ? lotFmt(+e.fm) : ""}" aria-label="Coût total des runes ajoutées"><button type="button" class="quick fmq" data-fmok="${e._id}">OK</button></span>` : ""}</td>
     <td class="l"><label class="chk"><input type="checkbox" data-moi="${e._id}" ${moi(e) ? "checked" : ""} ${me ? "" : "disabled"} aria-label="Crafté par moi : ${esc(e.nom || "")}"><span>${moi(e) ? "oui" : "non"}</span></label></td>
@@ -794,7 +794,7 @@ function fmSave(id) {
 // rappel sur « Calculer » : crafts lancés depuis plus de 3 jours et pas encore notés comme vendus
 const REMIND_DAYS = 3;
 function renderRemind() {
-  const L = isMe() ? S.journal.filter(e => (e.src || "craft") === "craft" && !isDone(e) && ageDays(e.achat) > REMIND_DAYS) : [], n = L.length, box = $("#cRemind");
+  const L = isMe() ? S.journal.filter(e => !isDone(e) && ageDays(e.achat) > REMIND_DAYS) : [], n = L.length, box = $("#cRemind");
   box.hidden = !n; if (!n) return;
   const k = L.reduce((a, e) => a + coutT(e), 0);
   box.innerHTML = `<span><b>${n} craft${n > 1 ? "s" : ""} pas encore noté${n > 1 ? "s" : ""} comme vendu${n > 1 ? "s" : ""}</b> depuis plus de ${REMIND_DAYS} jours (${fmt(k)} kamas engagés). Si tu les as vendus, note-le pour que ton bénéfice soit juste.</span><button type="button" class="quick" id="cRemindGo">Voir la liste</button>`;
@@ -851,6 +851,7 @@ function calcTotals() {
     <div><span>J'en crafte au plus</span><b>${x.canDo != null && x.bud ? fmt(x.canDo) : "?"}</b></div>`;
   const q = Math.max(1, Math.round(+$("#cQ").value || 1));
   $("#cBen").textContent = x.ben != null ? `${x.ben * q > 0 ? "+" : ""}${fmt(x.ben * q)}` : "–"; $("#cBen").style.color = x.ben == null ? "" : x.ben < 0 ? "var(--bad)" : "var(--good)";
+  $("#cBen").closest(".tot").classList.toggle("is-pos", x.ben > 0); $("#cBen").closest(".tot").classList.toggle("is-neg", x.ben < 0);
   const need = x.miss ? null : (x.cost + x.fm) * q;
   $("#cGoNote").innerHTML = (nUp && !x.miss && x.pv ? `<span class="neg">${nUp} ressource${nUp > 1 ? "s" : ""} plus chère${nUp > 1 ? "s" : ""} que d'habitude (voir les ressources).</span> ` : "") + (x.miss ? "Complète d'abord les prix des ressources." : !x.pv ? "Indique le prix de vente juste au-dessus." : `Ça t'engage ${fmt(need)} kamas${x.bud && need > x.free ? ` · <span class="neg">plus que tes ${fmt(x.free)} kamas</span>` : ""}. Le craft ira dans « Mes crafts ».`);
   $("#cGo").disabled = !!x.miss || !x.pv;
@@ -1192,6 +1193,15 @@ function renderDash() {
   }
   const C = B[B.length - 1];
   const pend = J.filter(e => !realize(e)), stock = pend.reduce((a, e) => a + (coutT(e)), 0);
+  // rien de vendu : un message utile plutôt que des graphiques à zéro
+  const none = !J.some(e => realize(e));
+  $("#dashEmpty").hidden = !none; $("#kpis").hidden = none; $("#dashGrid").hidden = none; $("#dashRange").hidden = none;
+  document.querySelector("#v-dash .seg").hidden = none;
+  if (none) { killChart("ben"); killChart("cum");
+    $("#dashEmpty").innerHTML = `<div class="es-t">Rien de vendu pour l'instant</div>
+      <p>${pend.length ? `Tu as <b>${fmt(stock)} kamas</b> engagés dans <b>${pend.length} ${pend.length > 1 ? "séries" : "série"} en cours</b>.` : "Lance ton premier craft depuis « Calculer un craft »."} Tes bénéfices, ton rendement par item et tes graphiques s'afficheront ici dès ta première vente notée.</p>
+      <div class="es-a">${pend.length ? `<button type="button" class="primary" data-goto="hist">Voir mes crafts en cours</button>` : `<button type="button" class="primary" data-goto="calc">Calculer un craft</button>`}</div>`;
+    return; }
   const totalBen = J.reduce((a, e) => { const R = realize(e); return R ? a + R.ventes - (coutT(e)) : a; }, 0);
   $("#dashRange").textContent = `${G.full(keys[0])} → ${G.full(keys[keys.length - 1])}`;
   $("#hBen").textContent = "Bénéfice par " + G.unit;
@@ -1298,6 +1308,12 @@ function renderGroup() {
     const bi = byItem(per)[0];
     return { uid, m, ven, cout, ben: ven - cout, roi: cout ? (ven - cout) / cout : null, n, stock, best: bi, last };
   });
+  // personne n'a encore rien vendu : on montre ce que chacun a en cours
+  const anySold = membersSorted().some(([uid, m]) => !isHidden(uid) && m.journal.some(e => realize(e)));
+  $("#grpEmpty").hidden = anySold; $("#grpBarP").hidden = !anySold; $("#grpChP").hidden = !anySold; document.querySelector("#v-grp .seg").hidden = !anySold;
+  if (!anySold) $("#grpEmpty").innerHTML = `<div class="es-t">Personne n'a encore rien vendu</div>
+    <p>Le classement et les courbes apparaîtront à la première vente notée. En attendant, voici ce que chacun a en cours :</p>
+    <div class="es-m">${M.map(x => `<button type="button" class="es-card" data-gview="${x.uid}"><span class="avatar sm" style="background:${colorOf(x.uid)}">${esc(initials(x.m.p.pseudo))}</span><span><b>${esc(x.m.p.pseudo)}</b><small>${fmt(x.stock)} kamas · ${x.m.journal.filter(e => !realize(e)).length} en cours</small></span></button>`).join("")}</div>`;
   // barres
   const mx = Math.max(1, ...M.map(x => Math.abs(x.ben))); const hasNeg = M.some(x => x.ben < 0);
   const sorted = [...M].sort((a, b) => b.ben - a.ben);
@@ -1309,13 +1325,14 @@ function renderGroup() {
   // tableau
   $("#grpRows").innerHTML = M.map(x => `<tr data-uid="${x.uid}">
     <td class="l"><div class="mname"><span class="avatar" style="background:${colorOf(x.uid)}">${esc(initials(x.m.p.pseudo))}</span><span>${esc(x.m.p.pseudo)}${x.uid === ME ? '<span class="you">moi</span>' : ""}<small>${esc(x.m.p.serveur || "")}</small></span></div></td>
+    <td class="m">${fmt(x.stock)}</td>
     <td class="m ${x.ben < 0 ? "neg" : x.ben > 0 ? "pos" : ""}">${fmt(x.ben)}</td><td class="m">${fmt(x.ven)}</td>
     <td>${x.roi != null ? `<span class="pill ${pillCls(x.roi)}">${pillTxt(x.roi)}</span>` : "–"}</td>
-    <td class="m">${x.n}</td><td class="m">${fmt(x.stock)}</td>
+    <td class="m">${x.n}</td>
     <td class="l">${x.best ? `${esc(x.best.k)} <span class="note">${pillTxt(x.best.roi)}</span>` : "–"}</td>
     <td class="l note">${x.last ? fdate(x.last) : "–"}</td></tr>`).join("");
   // courbes cumulées 12 semaines
-  killChart("grp"); if (!window.Chart) return;
+  killChart("grp"); if (!window.Chart || !anySold) return;
   const G = GR.semaine, cur = G.start(now); const wk = []; for (let k = 11; k >= 0; k--) wk.push(G.add(cur, -k));
   const ds = membersSorted().map(([uid, m]) => {
     const per = wk.map(() => 0);
@@ -1514,7 +1531,7 @@ $("#lForm").addEventListener("submit", e => {
   if (!S.suivi.some(x => x.id === id)) { S.suivi.push({ id, brk: 0 }); Store.saveSuivi(); }
   Store.addJr({ item: id, nom: it.n, qte: q, cout, achat: today(), brisage: "", runes: 0, vente: "", encaisse: 0, src: $("#lSrc").value, dest: $("#lDest").value });
   $("#launchPanel").hidden = true;
-  toast(`${q} × ${it.n} lancé${q > 1 ? "s" : ""} : à retrouver dans Mes séries`);
+  toast(`${q} × ${it.n} lancé${q > 1 ? "s" : ""} : à retrouver dans Mes crafts`);
 });
 // ----- mise en vente (taxe payée à chaque fois) et ventes partielles
 let sellJ = null, sellMode = "vente";
@@ -1604,9 +1621,9 @@ document.addEventListener("keydown", e => {
   if (el.matches?.("input,select,textarea") || e.ctrlKey || e.metaKey || e.altKey) return;
   if (!$("#app") || $("#app").hidden) return;
   const k = e.key;
-  if (["0", "1", "2", "3", "4", "5"].includes(k)) { setTab(["home", "res", "crafts", "jr", "dash", "grp"][+k]); e.preventDefault(); }
+  if (["0", "1", "2", "3", "4", "5"].includes(k)) { setTab(["home", "res", "crafts", "hist", "dash", "grp"][+k]); e.preventDefault(); }
   else if (k === "/") { e.preventDefault(); if (!isMe()) setView(ME); setTab("crafts"); $("#q").focus(); }
-  else if (k === "n" || k === "N") { e.preventDefault(); if (!isMe()) setView(ME); setTab("jr"); $("#jItem").focus(); }
+  else if (k === "n" || k === "N") { e.preventDefault(); if (!isMe()) setView(ME); setTab("calc"); $("#cSearch").focus(); }
   else if (k === "?") { e.preventDefault(); $("#helpPanel").hidden = false; }
   else if (k === "Escape") { $("#helpPanel").hidden = true; }
   else if ((k === "b" || k === "v") && tab === "jr" && isMe()) {
