@@ -167,7 +167,7 @@
       <!-- MES CRAFTS : tout ce que j'ai crafté, avec la date -->
       <section id="v-hist" class="stack calc" hidden>
         <div class="panel cstep2" id="cHistP">
-          <div class="panel-head"><h2>Mes crafts</h2><span class="sub" id="cHistSub"></span></div>
+          <div class="panel-head"><h2 id="cHistT">Mes crafts</h2><span class="sub" id="cHistSub"></span></div>
           <div class="row" style="gap:6px;flex-wrap:wrap" role="group" aria-label="Filtrer mes crafts">
             <button type="button" class="ghost" data-chf="all">Tous</button>
             <button type="button" class="ghost" data-chf="moi">Craftés par moi</button>
@@ -175,6 +175,12 @@
             <button type="button" class="ghost" data-chf="open">Pas encore vendus</button>
           </div>
           <div class="tbl-wrap"><table class="t-calc t-hist"><thead><tr><th class="l">Date</th><th class="l">Item</th><th>Qté</th><th>Coût</th><th class="l">Crafté par moi</th><th class="l">Vente</th></tr></thead><tbody id="cHist"></tbody></table></div>
+          <p class="legend"><span class="status s-run">Pas encore en vente</span> rien n'est en HDV · <span class="status s-brk">En vente</span> tu as noté la mise en vente (la taxe est comptée) · <span class="status s-done">Vendu</span> les kamas sont rentrés</p>
+        </div>
+        <div class="panel cstep2" id="gOpenP">
+          <div class="panel-head"><h2>En cours dans le groupe</h2><span class="sub" id="gOpenSub"></span></div>
+          <p class="note" style="margin:0">Les crafts et séries pas encore vendus des autres membres. Clique sur un nom pour voir tout son profil.</p>
+          <div class="tbl-wrap"><table class="t-calc t-hist"><thead><tr><th class="l">Membre</th><th class="l">Date</th><th class="l">Item</th><th>Qté</th><th>Coût</th><th class="l">Où ça en est</th></tr></thead><tbody id="gOpen"></tbody></table></div>
         </div>
       </section>
 

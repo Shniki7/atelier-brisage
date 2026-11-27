@@ -149,7 +149,7 @@ function seriesStep(e) {
   if (rev && q > 0) return ["s-brk", `${q}/${n} vendu${q > 1 ? "s" : ""}`];
   if (!rev && (e.ventes || []).length) return ["s-brk", "Runes en partie vendues"];
   if (+e.lv > 0) return ["s-brk", "En vente"];
-  return +e.runes > 0 ? ["s-brk", "Brisé, runes à vendre"] : rev ? ["s-run", "À revendre"] : ["s-run", "À briser"];
+  return +e.runes > 0 ? ["s-brk", "Brisé, runes à vendre"] : rev ? ["s-run", "Pas encore en vente"] : ["s-run", "À briser"];
 }
 // Une série est terminée quand tout est vendu (e.fini). Anciennes séries : dès qu'un montant encaissé est saisi.
 function isDone(e) { return e.fini === true || (e.fini === undefined && !e.ventes && +e.encaisse > 0); }
@@ -742,8 +742,28 @@ function calcState() {
 // liste de tout ce que j'ai crafté (séries obtenues en craftant), la plus récente en haut
 let calcHistF = lsGet("calcHistF") || "all";
 const jrWhen = e => e.ts ? new Date(e.ts) : pD(e.achat);
+// crafts et séries pas encore vendus des autres membres (profils visibles)
+function renderGroupOpen() {
+  const rows = [];
+  for (const [uid, m] of membersSorted()) { if (uid === ME || isHidden(uid)) continue; for (const e of m.journal || []) if (!isDone(e)) rows.push({ uid, m, e }); }
+  rows.sort((a, b) => (jrWhen(b.e)?.getTime() || 0) - (jrWhen(a.e)?.getTime() || 0));
+  const n = membersSorted().filter(([u]) => u !== ME).length;
+  $("#gOpenSub").textContent = rows.length ? `${fmt(rows.length)} en cours` : "";
+  $("#gOpen").innerHTML = rows.length ? rows.map(({ uid, m, e }) => { const d = jrWhen(e), st = seriesStep(e); return `<tr>
+    <td class="l"><button type="button" class="gmem" data-gview="${uid}"><span class="avatar sm" style="background:${colorOf(uid)}">${esc(initials(m.p.pseudo))}</span>${esc(m.p.pseudo)}</button></td>
+    <td class="l m">${d ? d.toLocaleDateString("fr-FR", { day: "2-digit", month: "2-digit" }) : "–"}</td>
+    <td class="l"><b>${esc(e.nom || ITEMS.get(e.item)?.n || "?")}</b></td>
+    <td class="m">${fmt(+e.qte || 0)}</td>
+    <td class="m">${fmt(+e.cout || 0)}${+e.fm > 0 ? `<small class="fmc">+ ${fmt(+e.fm)} runes</small>` : ""}</td>
+    <td class="l"><span class="status ${st[0]}">${st[1]}</span>${+e.lv > 0 ? `<small class="note" style="display:block">${fmt(+e.lv)} en HDV</small>` : ""}</td></tr>`; }).join("")
+    : `<tr><td class="l note" colspan="6">${n ? "Personne d'autre n'a de craft en cours (ou leurs profils sont privés)." : "Tu es seul dans le groupe pour l'instant."}</td></tr>`;
+}
+document.addEventListener("click", e => { const b = e.target.closest("[data-gview]"); if (b) { setView(b.dataset.gview); setTab("hist"); window.scrollTo({ top: 0 }); } });
 function renderCalcHist() {
-  const me = isMe(), all = S.journal.filter(e => (e.src || "craft") === "craft").sort((a, b) => (jrWhen(b)?.getTime() || 0) - (jrWhen(a)?.getTime() || 0));
+  renderGroupOpen();
+  $("#gOpenP").hidden = !isMe();
+  $("#cHistT").textContent = isMe() ? "Mes crafts" : `Crafts de ${S.p?.pseudo || "?"}`;
+  const me = isMe(), all = S.journal.filter(e => !me || (e.src || "craft") === "craft").sort((a, b) => (jrWhen(b)?.getTime() || 0) - (jrWhen(a)?.getTime() || 0));
   const moi = e => e.moi !== false, nMoi = all.filter(moi).length;
   const L = calcHistF === "moi" ? all.filter(moi) : calcHistF === "autre" ? all.filter(e => !moi(e)) : calcHistF === "open" ? all.filter(e => !isDone(e)) : all;
   $("#cHistSub").textContent = all.length ? `${fmt(all.length)} craft${all.length > 1 ? "s" : ""} · ${fmt(nMoi)} par moi · ${fmt(all.length - nMoi)} pas par moi` : "";
