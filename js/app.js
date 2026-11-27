@@ -826,6 +826,8 @@ function renderCalc() {
   });
   if (document.activeElement !== $("#cPv")) $("#cPv").value = x.pv ? lotFmt(x.pv) : "";
   if (document.activeElement !== $("#cFm")) $("#cFm").value = x.fm ? lotFmt(x.fm) : "";
+  if (calcFmFor !== calcId) { calcFmFor = calcId; calcFmShow = x.fm > 0; }
+  $("#cFmW").hidden = !calcFmShow; $("#cFmAdd").hidden = calcFmShow;
   calcTotals();
 }
 function calcTotals() {
@@ -885,6 +887,9 @@ $("#v-calc").addEventListener("change", e => {
   if (t.dataset.clot) { calcLot[t.dataset.clot] = +t.value; renderCalc(); applyRO(); return; }
   if (t.dataset.cp || t.id === "cPv" || t.id === "cFm") deferRender();
 });
+// runes (forgemagie) : champ replié tant qu'il n'y en a pas pour cet item
+let calcFmShow = false, calcFmFor = null;
+$("#cFmAdd").addEventListener("click", () => { calcFmShow = true; $("#cFmW").hidden = false; $("#cFmAdd").hidden = true; $("#cFm").focus(); });
 $("#cGo").addEventListener("click", () => {
   const x = calcState(); if (!x || x.miss || !x.pv || !isMe()) return; const q = Math.max(1, Math.round(+$("#cQ").value || 1));
   if (!S.suivi.some(s => s.id === calcId)) { S.suivi.push({ id: calcId, brk: 0, pv: x.pv, mv: today() }); Store.saveSuivi(); }
